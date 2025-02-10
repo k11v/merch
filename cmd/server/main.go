@@ -1,9 +1,18 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"log/slog"
+	"net"
+	"net/http"
 	"os"
 	"strconv"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/k11v/merch/internal/app"
 )
 
 func main() {
@@ -47,5 +56,36 @@ func main() {
 }
 
 func run(host string, port int, postgresURL string) error {
+	ctx := context.Background()
+
+	postgresPool, err := app.NewPostgresPool(ctx, postgresURL)
+	if err != nil {
+		return err
+	}
+	defer postgresPool.Close()
+
+	httpServer := newHTTPServer(postgresPool, host, port)
+
+	slog.Info("starting HTTP server", "addr", httpServer.Addr)
+	err = httpServer.ListenAndServe()
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+
 	return nil
+}
+
+func newHTTPServer(db *pgxpool.Pool, host string, port int) *http.Server {
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
+
+	mux := http.NewServeMux()
+
+	logger := slog.With("source", "http")
+	logLogger := slog.NewLogLogger(logger.Handler(), slog.LevelError)
+
+	return &http.Server{
+		Addr:     addr,
+		Handler:  mux,
+		ErrorLog: logLogger,
+	}
 }
