@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/k11v/merch/api/merch"
 	"github.com/k11v/merch/internal/app"
 )
 
@@ -88,4 +89,28 @@ func newHTTPServer(db *pgxpool.Pool, host string, port int) *http.Server {
 		Handler:  mux,
 		ErrorLog: logLogger,
 	}
+}
+
+var _ merch.StrictServerInterface = (*Handler)(nil)
+
+type Handler struct{}
+
+// GetAPIBuyItem implements merch.StrictServerInterface.
+func (s *Handler) GetAPIBuyItem(ctx context.Context, request merch.GetAPIBuyItemRequestObject) (merch.GetAPIBuyItemResponseObject, error) {
+	panic("unimplemented")
+}
+
+// GetAPIInfo implements merch.StrictServerInterface.
+func (s *Handler) GetAPIInfo(ctx context.Context, request merch.GetAPIInfoRequestObject) (merch.GetAPIInfoResponseObject, error) {
+	panic("unimplemented")
+}
+
+// PostAPIAuth implements merch.StrictServerInterface.
+func (s *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequestObject) (merch.PostAPIAuthResponseObject, error) {
+	panic("unimplemented")
+}
+
+// PostAPISendCoin implements merch.StrictServerInterface.
+func (s *Handler) PostAPISendCoin(ctx context.Context, request merch.PostAPISendCoinRequestObject) (merch.PostAPISendCoinResponseObject, error) {
+	panic("unimplemented")
 }
