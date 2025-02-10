@@ -7,10 +7,12 @@ package merch
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 
 	"github.com/oapi-codegen/runtime"
+	strictnethttp "github.com/oapi-codegen/runtime/strictmiddleware/nethttp"
 )
 
 const (
@@ -325,4 +327,334 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("POST "+options.BaseURL+"/api/sendCoin", wrapper.PostAPISendCoin)
 
 	return m
+}
+
+type PostAPIAuthRequestObject struct {
+	Body *PostAPIAuthJSONRequestBody
+}
+
+type PostAPIAuthResponseObject interface {
+	VisitPostAPIAuthResponse(w http.ResponseWriter) error
+}
+
+type PostAPIAuth200JSONResponse AuthResponse
+
+func (response PostAPIAuth200JSONResponse) VisitPostAPIAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type PostAPIAuth400JSONResponse ErrorResponse
+
+func (response PostAPIAuth400JSONResponse) VisitPostAPIAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type PostAPIAuth401JSONResponse ErrorResponse
+
+func (response PostAPIAuth401JSONResponse) VisitPostAPIAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type PostAPIAuth500JSONResponse ErrorResponse
+
+func (response PostAPIAuth500JSONResponse) VisitPostAPIAuthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetAPIBuyItemRequestObject struct {
+	Item string `json:"item"`
+}
+
+type GetAPIBuyItemResponseObject interface {
+	VisitGetAPIBuyItemResponse(w http.ResponseWriter) error
+}
+
+type GetAPIBuyItem200Response struct {
+}
+
+func (response GetAPIBuyItem200Response) VisitGetAPIBuyItemResponse(w http.ResponseWriter) error {
+	w.WriteHeader(200)
+	return nil
+}
+
+type GetAPIBuyItem400JSONResponse ErrorResponse
+
+func (response GetAPIBuyItem400JSONResponse) VisitGetAPIBuyItemResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetAPIBuyItem401JSONResponse ErrorResponse
+
+func (response GetAPIBuyItem401JSONResponse) VisitGetAPIBuyItemResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetAPIBuyItem500JSONResponse ErrorResponse
+
+func (response GetAPIBuyItem500JSONResponse) VisitGetAPIBuyItemResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetAPIInfoRequestObject struct {
+}
+
+type GetAPIInfoResponseObject interface {
+	VisitGetAPIInfoResponse(w http.ResponseWriter) error
+}
+
+type GetAPIInfo200JSONResponse InfoResponse
+
+func (response GetAPIInfo200JSONResponse) VisitGetAPIInfoResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetAPIInfo400JSONResponse ErrorResponse
+
+func (response GetAPIInfo400JSONResponse) VisitGetAPIInfoResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetAPIInfo401JSONResponse ErrorResponse
+
+func (response GetAPIInfo401JSONResponse) VisitGetAPIInfoResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetAPIInfo500JSONResponse ErrorResponse
+
+func (response GetAPIInfo500JSONResponse) VisitGetAPIInfoResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type PostAPISendCoinRequestObject struct {
+	Body *PostAPISendCoinJSONRequestBody
+}
+
+type PostAPISendCoinResponseObject interface {
+	VisitPostAPISendCoinResponse(w http.ResponseWriter) error
+}
+
+type PostAPISendCoin200Response struct {
+}
+
+func (response PostAPISendCoin200Response) VisitPostAPISendCoinResponse(w http.ResponseWriter) error {
+	w.WriteHeader(200)
+	return nil
+}
+
+type PostAPISendCoin400JSONResponse ErrorResponse
+
+func (response PostAPISendCoin400JSONResponse) VisitPostAPISendCoinResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type PostAPISendCoin401JSONResponse ErrorResponse
+
+func (response PostAPISendCoin401JSONResponse) VisitPostAPISendCoinResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type PostAPISendCoin500JSONResponse ErrorResponse
+
+func (response PostAPISendCoin500JSONResponse) VisitPostAPISendCoinResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+// StrictServerInterface represents all server handlers.
+type StrictServerInterface interface {
+	// Аутентификация и получение JWT-токена. При первой аутентификации пользователь создается автоматически.
+	// (POST /api/auth)
+	PostAPIAuth(ctx context.Context, request PostAPIAuthRequestObject) (PostAPIAuthResponseObject, error)
+	// Купить предмет за монеты.
+	// (GET /api/buy/{item})
+	GetAPIBuyItem(ctx context.Context, request GetAPIBuyItemRequestObject) (GetAPIBuyItemResponseObject, error)
+	// Получить информацию о монетах, инвентаре и истории транзакций.
+	// (GET /api/info)
+	GetAPIInfo(ctx context.Context, request GetAPIInfoRequestObject) (GetAPIInfoResponseObject, error)
+	// Отправить монеты другому пользователю.
+	// (POST /api/sendCoin)
+	PostAPISendCoin(ctx context.Context, request PostAPISendCoinRequestObject) (PostAPISendCoinResponseObject, error)
+}
+
+type StrictHandlerFunc = strictnethttp.StrictHTTPHandlerFunc
+type StrictMiddlewareFunc = strictnethttp.StrictHTTPMiddlewareFunc
+
+type StrictHTTPServerOptions struct {
+	RequestErrorHandlerFunc  func(w http.ResponseWriter, r *http.Request, err error)
+	ResponseErrorHandlerFunc func(w http.ResponseWriter, r *http.Request, err error)
+}
+
+func NewStrictHandler(ssi StrictServerInterface, middlewares []StrictMiddlewareFunc) ServerInterface {
+	return &strictHandler{ssi: ssi, middlewares: middlewares, options: StrictHTTPServerOptions{
+		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		},
+		ResponseErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		},
+	}}
+}
+
+func NewStrictHandlerWithOptions(ssi StrictServerInterface, middlewares []StrictMiddlewareFunc, options StrictHTTPServerOptions) ServerInterface {
+	return &strictHandler{ssi: ssi, middlewares: middlewares, options: options}
+}
+
+type strictHandler struct {
+	ssi         StrictServerInterface
+	middlewares []StrictMiddlewareFunc
+	options     StrictHTTPServerOptions
+}
+
+// PostAPIAuth operation middleware
+func (sh *strictHandler) PostAPIAuth(w http.ResponseWriter, r *http.Request) {
+	var request PostAPIAuthRequestObject
+
+	var body PostAPIAuthJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PostAPIAuth(ctx, request.(PostAPIAuthRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PostAPIAuth")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PostAPIAuthResponseObject); ok {
+		if err := validResponse.VisitPostAPIAuthResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetAPIBuyItem operation middleware
+func (sh *strictHandler) GetAPIBuyItem(w http.ResponseWriter, r *http.Request, item string) {
+	var request GetAPIBuyItemRequestObject
+
+	request.Item = item
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAPIBuyItem(ctx, request.(GetAPIBuyItemRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAPIBuyItem")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetAPIBuyItemResponseObject); ok {
+		if err := validResponse.VisitGetAPIBuyItemResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetAPIInfo operation middleware
+func (sh *strictHandler) GetAPIInfo(w http.ResponseWriter, r *http.Request) {
+	var request GetAPIInfoRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAPIInfo(ctx, request.(GetAPIInfoRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAPIInfo")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetAPIInfoResponseObject); ok {
+		if err := validResponse.VisitGetAPIInfoResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PostAPISendCoin operation middleware
+func (sh *strictHandler) PostAPISendCoin(w http.ResponseWriter, r *http.Request) {
+	var request PostAPISendCoinRequestObject
+
+	var body PostAPISendCoinJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PostAPISendCoin(ctx, request.(PostAPISendCoinRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PostAPISendCoin")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PostAPISendCoinResponseObject); ok {
+		if err := validResponse.VisitPostAPISendCoinResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
