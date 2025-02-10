@@ -1,1 +1,1 @@
-# Merchandise
+# Merch
