@@ -1,0 +1,5 @@
+package: merch
+generate:
+  std-http-server: true
+  models: true
+output: merch.gen.go
