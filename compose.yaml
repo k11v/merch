@@ -1,0 +1,47 @@
+services:
+  server:
+    build: .
+    entrypoint: ["server"]
+    env_file:
+      - example.env
+    environment:
+      - APP_POSTGRES_URL=postgres://postgres:postgres@postgres:5432/postgres
+      - APP_HOST=0.0.0.0
+      - APP_PORT=8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres-up:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 3s
+      timeout: 30s
+      retries: 10
+  postgres-up:
+    build: .
+    entrypoint: ["postgres-up"]
+    env_file:
+      - example.env
+    environment:
+      - APP_POSTGRES_URL=postgres://postgres:postgres@postgres:5432/postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:13
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 3s
+      timeout: 30s
+      retries: 10
+volumes:
+  postgres-data:
