@@ -11,16 +11,16 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      postgres-up:
+      setup:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 3s
       timeout: 30s
       retries: 10
-  postgres-up:
+  setup:
     build: .
-    entrypoint: ["postgres-up"]
+    entrypoint: ["setup"]
     env_file:
       - example.env
     environment:
