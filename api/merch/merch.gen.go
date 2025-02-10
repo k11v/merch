@@ -77,26 +77,26 @@ type SendCoinRequest struct {
 	ToUser string `json:"toUser"`
 }
 
-// PostApiAuthJSONRequestBody defines body for PostApiAuth for application/json ContentType.
-type PostApiAuthJSONRequestBody = AuthRequest
+// PostAPIAuthJSONRequestBody defines body for PostAPIAuth for application/json ContentType.
+type PostAPIAuthJSONRequestBody = AuthRequest
 
-// PostApiSendCoinJSONRequestBody defines body for PostApiSendCoin for application/json ContentType.
-type PostApiSendCoinJSONRequestBody = SendCoinRequest
+// PostAPISendCoinJSONRequestBody defines body for PostAPISendCoin for application/json ContentType.
+type PostAPISendCoinJSONRequestBody = SendCoinRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// Аутентификация и получение JWT-токена. При первой аутентификации пользователь создается автоматически.
 	// (POST /api/auth)
-	PostApiAuth(w http.ResponseWriter, r *http.Request)
+	PostAPIAuth(w http.ResponseWriter, r *http.Request)
 	// Купить предмет за монеты.
 	// (GET /api/buy/{item})
-	GetApiBuyItem(w http.ResponseWriter, r *http.Request, item string)
+	GetAPIBuyItem(w http.ResponseWriter, r *http.Request, item string)
 	// Получить информацию о монетах, инвентаре и истории транзакций.
 	// (GET /api/info)
-	GetApiInfo(w http.ResponseWriter, r *http.Request)
+	GetAPIInfo(w http.ResponseWriter, r *http.Request)
 	// Отправить монеты другому пользователю.
 	// (POST /api/sendCoin)
-	PostApiSendCoin(w http.ResponseWriter, r *http.Request)
+	PostAPISendCoin(w http.ResponseWriter, r *http.Request)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -108,8 +108,8 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(http.Handler) http.Handler
 
-// PostApiAuth operation middleware
-func (siw *ServerInterfaceWrapper) PostApiAuth(w http.ResponseWriter, r *http.Request) {
+// PostAPIAuth operation middleware
+func (siw *ServerInterfaceWrapper) PostAPIAuth(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
@@ -118,7 +118,7 @@ func (siw *ServerInterfaceWrapper) PostApiAuth(w http.ResponseWriter, r *http.Re
 	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.PostApiAuth(w, r)
+		siw.Handler.PostAPIAuth(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -128,8 +128,8 @@ func (siw *ServerInterfaceWrapper) PostApiAuth(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
-// GetApiBuyItem operation middleware
-func (siw *ServerInterfaceWrapper) GetApiBuyItem(w http.ResponseWriter, r *http.Request) {
+// GetAPIBuyItem operation middleware
+func (siw *ServerInterfaceWrapper) GetAPIBuyItem(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 
@@ -149,7 +149,7 @@ func (siw *ServerInterfaceWrapper) GetApiBuyItem(w http.ResponseWriter, r *http.
 	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetApiBuyItem(w, r, item)
+		siw.Handler.GetAPIBuyItem(w, r, item)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -159,8 +159,8 @@ func (siw *ServerInterfaceWrapper) GetApiBuyItem(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
-// GetApiInfo operation middleware
-func (siw *ServerInterfaceWrapper) GetApiInfo(w http.ResponseWriter, r *http.Request) {
+// GetAPIInfo operation middleware
+func (siw *ServerInterfaceWrapper) GetAPIInfo(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
@@ -169,7 +169,7 @@ func (siw *ServerInterfaceWrapper) GetApiInfo(w http.ResponseWriter, r *http.Req
 	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetApiInfo(w, r)
+		siw.Handler.GetAPIInfo(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -179,8 +179,8 @@ func (siw *ServerInterfaceWrapper) GetApiInfo(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
-// PostApiSendCoin operation middleware
-func (siw *ServerInterfaceWrapper) PostApiSendCoin(w http.ResponseWriter, r *http.Request) {
+// PostAPISendCoin operation middleware
+func (siw *ServerInterfaceWrapper) PostAPISendCoin(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
@@ -189,7 +189,7 @@ func (siw *ServerInterfaceWrapper) PostApiSendCoin(w http.ResponseWriter, r *htt
 	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.PostApiSendCoin(w, r)
+		siw.Handler.PostAPISendCoin(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -319,10 +319,10 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
-	m.HandleFunc("POST "+options.BaseURL+"/api/auth", wrapper.PostApiAuth)
-	m.HandleFunc("GET "+options.BaseURL+"/api/buy/{item}", wrapper.GetApiBuyItem)
-	m.HandleFunc("GET "+options.BaseURL+"/api/info", wrapper.GetApiInfo)
-	m.HandleFunc("POST "+options.BaseURL+"/api/sendCoin", wrapper.PostApiSendCoin)
+	m.HandleFunc("POST "+options.BaseURL+"/api/auth", wrapper.PostAPIAuth)
+	m.HandleFunc("GET "+options.BaseURL+"/api/buy/{item}", wrapper.GetAPIBuyItem)
+	m.HandleFunc("GET "+options.BaseURL+"/api/info", wrapper.GetAPIInfo)
+	m.HandleFunc("POST "+options.BaseURL+"/api/sendCoin", wrapper.PostAPISendCoin)
 
 	return m
 }

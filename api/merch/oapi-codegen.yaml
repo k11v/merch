@@ -1,5 +1,7 @@
+output: merch.gen.go
 package: merch
 generate:
   std-http-server: true
   models: true
-output: merch.gen.go
+output-options:
+  name-normalizer: ToCamelCaseWithInitialisms
