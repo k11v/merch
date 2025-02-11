@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -77,21 +78,57 @@ func run(host string, port int, postgresURL string) error {
 }
 
 func newHTTPServer(db *pgxpool.Pool, host string, port int) *http.Server {
-	addr := net.JoinHostPort(host, strconv.Itoa(port))
+	handler := NewHandler()
 
-	merch.StrictMiddlewareFunc
+	strictMiddlewares := []merch.StrictMiddlewareFunc{
+		StrictAuthenticator(),
+	}
+	middlewares := []merch.MiddlewareFunc{
+		Authenticator(), // Should be redundant.
+	}
 
-	h := NewHandler()
-	si := merch.NewStrictHandlerWithOptions(h)
+	responseErrorHandler := func(w http.ResponseWriter, r *http.Request, err error) {
+		slog.Error("server error", "err", err)
+
+		errors := new(string)
+		*errors = "internal server error"
+		response := merch.ErrorResponse{Errors: errors}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(response)
+	}
+	requestErrorHandler := func(w http.ResponseWriter, r *http.Request, err error) {
+		errors := new(string)
+		*errors = err.Error()
+		response := merch.ErrorResponse{Errors: errors}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		encodeErr := json.NewEncoder(w).Encode(response)
+		if encodeErr != nil {
+			responseErrorHandler(w, r, encodeErr)
+		}
+	}
 
 	mux := http.NewServeMux()
+	ssi := merch.StrictServerInterface(handler)
+	si := merch.NewStrictHandlerWithOptions(ssi, strictMiddlewares, merch.StrictHTTPServerOptions{
+		RequestErrorHandlerFunc:  requestErrorHandler,
+		ResponseErrorHandlerFunc: responseErrorHandler,
+	})
+	h := merch.HandlerWithOptions(si, merch.StdHTTPServerOptions{
+		BaseRouter:       mux,
+		Middlewares:      middlewares,
+		ErrorHandlerFunc: requestErrorHandler,
+	})
 
-	logger := slog.With("source", "http")
-	logLogger := slog.NewLogLogger(logger.Handler(), slog.LevelError)
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
+	logLogger := slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)
 
 	return &http.Server{
 		Addr:     addr,
-		Handler:  mux,
+		Handler:  h,
 		ErrorLog: logLogger,
 	}
 }
