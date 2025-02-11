@@ -79,6 +79,11 @@ func run(host string, port int, postgresURL string) error {
 func newHTTPServer(db *pgxpool.Pool, host string, port int) *http.Server {
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
 
+	merch.StrictMiddlewareFunc
+
+	h := NewHandler()
+	si := merch.NewStrictHandlerWithOptions(h)
+
 	mux := http.NewServeMux()
 
 	logger := slog.With("source", "http")
@@ -94,6 +99,10 @@ func newHTTPServer(db *pgxpool.Pool, host string, port int) *http.Server {
 var _ merch.StrictServerInterface = (*Handler)(nil)
 
 type Handler struct{}
+
+func NewHandler() *Handler {
+	return &Handler{}
+}
 
 // GetAPIBuyItem implements merch.StrictServerInterface.
 func (s *Handler) GetAPIBuyItem(ctx context.Context, request merch.GetAPIBuyItemRequestObject) (merch.GetAPIBuyItemResponseObject, error) {
@@ -113,6 +122,19 @@ func (s *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 // PostAPISendCoin implements merch.StrictServerInterface.
 func (s *Handler) PostAPISendCoin(ctx context.Context, request merch.PostAPISendCoinRequestObject) (merch.PostAPISendCoinResponseObject, error) {
 	panic("unimplemented")
+}
+
+func StrictAuthenticator() merch.StrictMiddlewareFunc {
+	return func(f merch.StrictHandlerFunc, operationID string) merch.StrictHandlerFunc {
+		return func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (response interface{}, err error) {
+			switch operationID {
+			case "PostAPIAuth":
+			default:
+				// Do authentication.
+			}
+			return f(ctx, w, r, request)
+		}
+	}
 }
 
 func Authenticator() func(next http.Handler) http.Handler {
