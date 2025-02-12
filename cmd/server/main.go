@@ -153,7 +153,7 @@ func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 
 	user, err := createUser(ctx, h.db, username, passwordHash)
 	if errors.Is(err, ErrUserExist) {
-		user, err = getUser(ctx, h.db, username)
+		user, err = getUserByUsername(ctx, h.db, username)
 	}
 	if err != nil {
 		return nil, err
@@ -170,7 +170,287 @@ func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 
 // PostAPISendCoin implements merch.StrictServerInterface.
 func (h *Handler) PostAPISendCoin(ctx context.Context, request merch.PostAPISendCoinRequestObject) (merch.PostAPISendCoinResponseObject, error) {
+	toUsername := request.Body.ToUser
+	if toUsername == "" {
+		errors := "empty toUser body value"
+		return merch.PostAPISendCoin400JSONResponse{Errors: &errors}, nil
+	}
+
+	amount := request.Body.Amount
+	if amount <= 0 {
+		errors := "non-positive amount body value"
+		return merch.PostAPISendCoin400JSONResponse{Errors: &errors}, nil
+	}
+
+	currentUserID, ok := ctx.Value(ContextValueUserID).(uuid.UUID)
+	if !ok {
+		panic(fmt.Errorf("can't get %s context value", ContextValueUserID))
+	}
+
+	fromUserID := currentUserID
+
+	toUser, err := getUserByUsername(ctx, h.db, toUsername)
+	if err != nil {
+		if errors.Is(err, ErrUserNotExist) {
+			errors := "toUser doesn't exist"
+			return merch.PostAPISendCoin400JSONResponse{Errors: &errors}, nil
+		}
+		return nil, err
+	}
+	toUserID := toUser.ID
+
+	if fromUserID == toUserID {
+		errors := "identical fromUser and toUser"
+		return merch.PostAPISendCoin400JSONResponse{Errors: &errors}, nil
+	}
+
+	tx, err := h.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		err = tx.Rollback(ctx)
+		if err != nil {
+			slog.Error("didn't rollback", "err", err)
+		}
+	}()
+
+	fromUser, err := getUserForUpdate(ctx, tx, fromUserID)
+	if err != nil {
+		return nil, err
+	}
+
+	toUser, err = getUserForUpdate(ctx, tx, toUserID)
+	if err != nil {
+		return nil, err
+	}
+
+	fromUserBalance := fromUser.Balance
+	fromUserBalance -= amount
+	if fromUserBalance < 0 {
+		fmt.Println(fromUser)
+		errors := "not enough coins"
+		return merch.PostAPISendCoin400JSONResponse{Errors: &errors}, nil
+	}
+
+	toUserBalance := toUser.Balance
+	toUserBalance += amount
+
+	_, err = updateUserBalance(ctx, tx, fromUserID, fromUserBalance)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = updateUserBalance(ctx, tx, toUserID, toUserBalance)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = createTransaction(ctx, tx, fromUserID, toUserID, amount)
+	if err != nil {
+		return nil, err
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	return merch.PostAPISendCoin200Response{}, nil
+}
+
+type pgxExecutor interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
+	Exec(ctx context.Context, sql string, arguments ...any) (commandTag pgconn.CommandTag, err error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
+}
+
+var (
+	ErrUserExist    = errors.New("user already exists")
+	ErrUserNotExist = errors.New("user does not exist")
+)
+
+type User struct {
+	ID           uuid.UUID
+	Username     string
+	PasswordHash string
+	Balance      int
+}
+
+func rowToUser(collectable pgx.CollectableRow) (*User, error) {
+	type row struct {
+		ID           uuid.UUID `db:"id"`
+		Username     string    `db:"username"`
+		PasswordHash string    `db:"password_hash"`
+		Balance      int       `db:"balance"`
+	}
+
+	collected, err := pgx.RowToStructByName[row](collectable)
+	if err != nil {
+		return nil, err
+	}
+
+	return &User{
+		ID:           collected.ID,
+		Username:     collected.Username,
+		PasswordHash: collected.PasswordHash,
+		Balance:      collected.Balance,
+	}, nil
+}
+
+type Transaction struct {
+	ID         uuid.UUID
+	FromUserID uuid.UUID
+	ToUserID   uuid.UUID
+	Amount     int
+}
+
+func rowToTransaction(collectable pgx.CollectableRow) (*Transaction, error) {
+	type row struct {
+		ID         uuid.UUID `db:"id"`
+		FromUserID uuid.UUID `db:"from_user_id"`
+		ToUserID   uuid.UUID `db:"to_user_id"`
+		Amount     int       `db:"amount"`
+	}
+
+	collected, err := pgx.RowToStructByName[row](collectable)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Transaction{
+		ID:         collected.ID,
+		FromUserID: collected.FromUserID,
+		ToUserID:   collected.ToUserID,
+		Amount:     collected.Amount,
+	}, nil
+}
+
+func getUserForUpdate(ctx context.Context, db pgxExecutor, id uuid.UUID) (*User, error) {
+	query := `
+		SELECT id, username, password_hash, balance
+		FROM users
+		WHERE id = $1
+		FOR UPDATE
+	`
+	args := []any{id}
+
+	rows, _ := db.Query(ctx, query, args...)
+	user, err := pgx.CollectExactlyOneRow(rows, rowToUser)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrUserNotExist
+		}
+		return nil, err
+	}
+
+	return user, nil
+}
+
+func updateUserBalance(ctx context.Context, db pgxExecutor, id uuid.UUID, balance int) (*User, error) {
+	query := `
+		UPDATE users
+		SET balance = $2
+		WHERE id = $1
+		RETURNING id, username, password_hash, balance
+	`
+	args := []any{id, balance}
+
+	rows, _ := db.Query(ctx, query, args...)
+	user, err := pgx.CollectExactlyOneRow(rows, rowToUser)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrUserNotExist
+		}
+		return nil, err
+	}
+
+	return user, nil
+}
+
+func createTransaction(ctx context.Context, db pgxExecutor, fromUserID, toUserID uuid.UUID, amount int) (*Transaction, error) {
+	query := `
+		INSERT INTO transactions (from_user_id, to_user_id, amount)
+		VALUES ($1, $2, $3)
+		RETURNING id, from_user_id, to_user_id, amount
+	`
+	args := []any{fromUserID, toUserID, amount}
+
+	rows, _ := db.Query(ctx, query, args...)
+	transaction, err := pgx.CollectExactlyOneRow(rows, rowToTransaction)
+	if err != nil {
+		return nil, err
+	}
+
+	return transaction, nil
+}
+
+func getUserByUsername(ctx context.Context, db pgxExecutor, username string) (*User, error) {
+	query := `
+		SELECT id, username, password_hash, balance
+		FROM users
+		WHERE username = $1
+	`
+	args := []any{username}
+
+	rows, _ := db.Query(ctx, query, args...)
+	user, err := pgx.CollectExactlyOneRow(rows, rowToUser)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrUserNotExist
+		}
+		return nil, err
+	}
+
+	return user, nil
+}
+
+func createUser(ctx context.Context, db pgxExecutor, username string, passwordHash string) (*User, error) {
+	query := `
+		INSERT INTO users (username, password_hash)
+		VALUES ($1, $2)
+		RETURNING id, username, password_hash, balance
+	`
+	args := []any{username, passwordHash}
+
+	rows, _ := db.Query(ctx, query, args...)
+	user, err := pgx.CollectExactlyOneRow(rows, rowToUser)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgerrcode.IsIntegrityConstraintViolation(pgErr.Code) && pgErr.ConstraintName == "users_username_idx" {
+			return nil, ErrUserExist
+		}
+		return nil, err
+	}
+
+	return user, nil
+}
+
+func serveRequestError(w http.ResponseWriter, r *http.Request, err error) {
+	errors := new(string)
+	*errors = err.Error()
+	response := merch.ErrorResponse{Errors: errors}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	encodeErr := json.NewEncoder(w).Encode(response)
+	if encodeErr != nil {
+		serveResponseError(w, r, encodeErr)
+	}
+}
+
+func serveResponseError(w http.ResponseWriter, r *http.Request, err error) {
+	slog.Error("server error", "err", err)
+
+	errors := new(string)
+	*errors = "internal server error"
+	response := merch.ErrorResponse{Errors: errors}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusInternalServerError)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 func Authenticator() func(next http.Handler) http.Handler {
@@ -244,103 +524,4 @@ func Authenticator() func(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
-}
-
-var (
-	ErrUserExist    = errors.New("user already exists")
-	ErrUserNotExist = errors.New("user does not exist")
-)
-
-type User struct {
-	ID           uuid.UUID
-	Username     string
-	PasswordHash string
-	CoinAmount   int
-}
-
-func getUser(ctx context.Context, db *pgxpool.Pool, username string) (*User, error) {
-	query := `
-		SELECT id, username, password_hash, coin_amount
-		FROM users
-		WHERE username = $1
-	`
-	args := []any{username}
-
-	rows, _ := db.Query(ctx, query, args...)
-	user, err := pgx.CollectExactlyOneRow(rows, rowToUser)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrUserNotExist
-		}
-		return nil, err
-	}
-
-	return user, nil
-}
-
-func createUser(ctx context.Context, db *pgxpool.Pool, username string, passwordHash string) (*User, error) {
-	query := `
-		INSERT INTO users (username, password_hash)
-		VALUES ($1, $2)
-		RETURNING id, username, password_hash, coin_amount
-	`
-	args := []any{username, passwordHash}
-
-	rows, _ := db.Query(ctx, query, args...)
-	user, err := pgx.CollectExactlyOneRow(rows, rowToUser)
-	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgerrcode.IsIntegrityConstraintViolation(pgErr.Code) && pgErr.ConstraintName == "users_username_idx" {
-			return nil, ErrUserExist
-		}
-		return nil, err
-	}
-
-	return user, nil
-}
-
-func rowToUser(collectable pgx.CollectableRow) (*User, error) {
-	type row struct {
-		ID           uuid.UUID `db:"id"`
-		Username     string    `db:"username"`
-		PasswordHash string    `db:"password_hash"`
-		CoinAmount   int       `db:"coin_amount"`
-	}
-
-	collected, err := pgx.RowToStructByName[row](collectable)
-	if err != nil {
-		return nil, err
-	}
-
-	return &User{
-		ID:           collected.ID,
-		Username:     collected.Username,
-		PasswordHash: collected.PasswordHash,
-		CoinAmount:   collected.CoinAmount,
-	}, nil
-}
-
-func serveRequestError(w http.ResponseWriter, r *http.Request, err error) {
-	errors := new(string)
-	*errors = err.Error()
-	response := merch.ErrorResponse{Errors: errors}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusBadRequest)
-	encodeErr := json.NewEncoder(w).Encode(response)
-	if encodeErr != nil {
-		serveResponseError(w, r, encodeErr)
-	}
-}
-
-func serveResponseError(w http.ResponseWriter, r *http.Request, err error) {
-	slog.Error("server error", "err", err)
-
-	errors := new(string)
-	*errors = "internal server error"
-	response := merch.ErrorResponse{Errors: errors}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusInternalServerError)
-	_ = json.NewEncoder(w).Encode(response)
 }
