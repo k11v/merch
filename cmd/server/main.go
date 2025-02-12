@@ -11,6 +11,10 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/k11v/merch/api/merch"
@@ -78,7 +82,7 @@ func run(host string, port int, postgresURL string) error {
 }
 
 func newHTTPServer(db *pgxpool.Pool, host string, port int) *http.Server {
-	handler := NewHandler()
+	handler := NewHandler(db)
 
 	strictMiddlewares := []merch.StrictMiddlewareFunc{
 		StrictAuthenticator(),
@@ -135,29 +139,128 @@ func newHTTPServer(db *pgxpool.Pool, host string, port int) *http.Server {
 
 var _ merch.StrictServerInterface = (*Handler)(nil)
 
-type Handler struct{}
+type Handler struct {
+	db *pgxpool.Pool
+}
 
-func NewHandler() *Handler {
-	return &Handler{}
+func NewHandler(db *pgxpool.Pool) *Handler {
+	return &Handler{db: db}
 }
 
 // GetAPIBuyItem implements merch.StrictServerInterface.
-func (s *Handler) GetAPIBuyItem(ctx context.Context, request merch.GetAPIBuyItemRequestObject) (merch.GetAPIBuyItemResponseObject, error) {
+func (h *Handler) GetAPIBuyItem(ctx context.Context, request merch.GetAPIBuyItemRequestObject) (merch.GetAPIBuyItemResponseObject, error) {
 	panic("unimplemented")
 }
 
 // GetAPIInfo implements merch.StrictServerInterface.
-func (s *Handler) GetAPIInfo(ctx context.Context, request merch.GetAPIInfoRequestObject) (merch.GetAPIInfoResponseObject, error) {
+func (h *Handler) GetAPIInfo(ctx context.Context, request merch.GetAPIInfoRequestObject) (merch.GetAPIInfoResponseObject, error) {
 	panic("unimplemented")
 }
 
 // PostAPIAuth implements merch.StrictServerInterface.
-func (s *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequestObject) (merch.PostAPIAuthResponseObject, error) {
-	panic("unimplemented")
+func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequestObject) (merch.PostAPIAuthResponseObject, error) {
+	if request.Body.Username == "" {
+		errors := newString("empty username")
+		return merch.PostAPIAuth400JSONResponse{Errors: errors}, nil
+	}
+	username := request.Body.Username
+
+	if request.Body.Password == "" {
+		errors := newString("empty password")
+		return merch.PostAPIAuth400JSONResponse{Errors: errors}, nil
+	}
+	passwordHash := "fakeHash(" + request.Body.Password + ")"
+
+	user, err := createUser(ctx, h.db, username, passwordHash)
+	if errors.Is(err, ErrUserExist) {
+		user, err = getUser(ctx, h.db, username)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if user.PasswordHash != passwordHash {
+		errors := newString("invalid username or password")
+		return merch.PostAPIAuth401JSONResponse{Errors: errors}, nil
+	}
+
+	token := newString("fakeToken(" + user.ID.String() + ")")
+	return merch.PostAPIAuth200JSONResponse{Token: token}, nil
+}
+
+var (
+	ErrUserExist    = errors.New("user already exists")
+	ErrUserNotExist = errors.New("user does not exist")
+)
+
+type User struct {
+	ID           uuid.UUID
+	Username     string
+	PasswordHash string
+}
+
+func getUser(ctx context.Context, db *pgxpool.Pool, username string) (*User, error) {
+	query := `
+		SELECT id, username, password_hash
+		FROM users
+		WHERE username = $1
+	`
+	args := []any{username}
+
+	rows, _ := db.Query(ctx, query, args...)
+	user, err := pgx.CollectExactlyOneRow(rows, rowToUser)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrUserNotExist
+		}
+		return nil, err
+	}
+
+	return user, nil
+}
+
+func createUser(ctx context.Context, db *pgxpool.Pool, username string, passwordHash string) (*User, error) {
+	query := `
+		INSERT INTO users (username, password_hash)
+		VALUES ($1, $2)
+		RETURNING id, username, password_hash
+	`
+	args := []any{username, passwordHash}
+
+	rows, _ := db.Query(ctx, query, args...)
+	user, err := pgx.CollectExactlyOneRow(rows, rowToUser)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgerrcode.IsIntegrityConstraintViolation(pgErr.Code) {
+			return nil, ErrUserExist
+		}
+		return nil, err
+	}
+
+	return user, nil
+}
+
+func rowToUser(collectable pgx.CollectableRow) (*User, error) {
+	type row struct {
+		ID           uuid.UUID `db:"id"`
+		Username     string    `db:"username"`
+		PasswordHash string    `db:"password_hash"`
+	}
+
+	collected, err := pgx.RowToStructByName[row](collectable)
+	if err != nil {
+		return nil, err
+	}
+
+	return &User{
+		ID:           collected.ID,
+		Username:     collected.Username,
+		PasswordHash: collected.PasswordHash,
+	}, nil
 }
 
 // PostAPISendCoin implements merch.StrictServerInterface.
-func (s *Handler) PostAPISendCoin(ctx context.Context, request merch.PostAPISendCoinRequestObject) (merch.PostAPISendCoinResponseObject, error) {
+func (h *Handler) PostAPISendCoin(ctx context.Context, request merch.PostAPISendCoinRequestObject) (merch.PostAPISendCoinResponseObject, error) {
 	panic("unimplemented")
 }
 
@@ -185,4 +288,8 @@ func Authenticator() func(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func newString(s string) *string {
+	return &s
 }
