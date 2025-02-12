@@ -89,10 +89,6 @@ func run(host string, port int, postgresURL string) error {
 func newHTTPServer(db *pgxpool.Pool, host string, port int) *http.Server {
 	handler := NewHandler(db)
 
-	middlewares := []merch.MiddlewareFunc{
-		Authenticator(),
-	}
-
 	mux := http.NewServeMux()
 	ssi := merch.StrictServerInterface(handler)
 	si := merch.NewStrictHandlerWithOptions(ssi, nil, merch.StrictHTTPServerOptions{
@@ -101,9 +97,15 @@ func newHTTPServer(db *pgxpool.Pool, host string, port int) *http.Server {
 	})
 	h := merch.HandlerWithOptions(si, merch.StdHTTPServerOptions{
 		BaseRouter:       mux,
-		Middlewares:      middlewares,
 		ErrorHandlerFunc: serveRequestError,
 	})
+
+	middlewares := []func(next http.Handler) http.Handler{
+		Authenticator(),
+	}
+	for _, m := range middlewares {
+		h = m(h)
+	}
 
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	logLogger := slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)
