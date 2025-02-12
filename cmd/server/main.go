@@ -129,7 +129,7 @@ func NewHandler(db *pgxpool.Pool) *Handler {
 
 // GetAPIBuyItem implements merch.StrictServerInterface.
 func (h *Handler) GetAPIBuyItem(ctx context.Context, request merch.GetAPIBuyItemRequestObject) (merch.GetAPIBuyItemResponseObject, error) {
-	panic("unimplemented")
+	return merch.GetAPIBuyItem200Response{}, nil
 }
 
 // GetAPIInfo implements merch.StrictServerInterface.
@@ -170,7 +170,7 @@ func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 
 // PostAPISendCoin implements merch.StrictServerInterface.
 func (h *Handler) PostAPISendCoin(ctx context.Context, request merch.PostAPISendCoinRequestObject) (merch.PostAPISendCoinResponseObject, error) {
-	panic("unimplemented")
+	return merch.PostAPISendCoin200Response{}, nil
 }
 
 func Authenticator() func(next http.Handler) http.Handler {
@@ -259,7 +259,7 @@ type User struct {
 
 func getUser(ctx context.Context, db *pgxpool.Pool, username string) (*User, error) {
 	query := `
-		SELECT id, username, password_hash
+		SELECT id, username, password_hash, coin_amount
 		FROM users
 		WHERE username = $1
 	`
@@ -281,7 +281,7 @@ func createUser(ctx context.Context, db *pgxpool.Pool, username string, password
 	query := `
 		INSERT INTO users (username, password_hash)
 		VALUES ($1, $2)
-		RETURNING id, username, password_hash
+		RETURNING id, username, password_hash, coin_amount
 	`
 	args := []any{username, passwordHash}
 
@@ -303,6 +303,7 @@ func rowToUser(collectable pgx.CollectableRow) (*User, error) {
 		ID           uuid.UUID `db:"id"`
 		Username     string    `db:"username"`
 		PasswordHash string    `db:"password_hash"`
+		CoinAmount   int       `db:"coin_amount"`
 	}
 
 	collected, err := pgx.RowToStructByName[row](collectable)
@@ -340,8 +341,4 @@ func serveResponseError(w http.ResponseWriter, r *http.Request, err error) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusInternalServerError)
 	_ = json.NewEncoder(w).Encode(response)
-}
-
-func newString(s string) *string {
-	return &s
 }
