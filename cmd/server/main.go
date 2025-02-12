@@ -132,7 +132,7 @@ func (h *Handler) GetAPIBuyItem(ctx context.Context, request merch.GetAPIBuyItem
 
 // GetAPIInfo implements merch.StrictServerInterface.
 func (h *Handler) GetAPIInfo(ctx context.Context, request merch.GetAPIInfoRequestObject) (merch.GetAPIInfoResponseObject, error) {
-	panic("unimplemented")
+	return merch.GetAPIInfo200JSONResponse{}, nil
 }
 
 // PostAPIAuth implements merch.StrictServerInterface.
@@ -164,77 +164,6 @@ func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 
 	token := "fakeToken(" + user.ID.String() + ")"
 	return merch.PostAPIAuth200JSONResponse{Token: &token}, nil
-}
-
-var (
-	ErrUserExist    = errors.New("user already exists")
-	ErrUserNotExist = errors.New("user does not exist")
-)
-
-type User struct {
-	ID           uuid.UUID
-	Username     string
-	PasswordHash string
-}
-
-func getUser(ctx context.Context, db *pgxpool.Pool, username string) (*User, error) {
-	query := `
-		SELECT id, username, password_hash
-		FROM users
-		WHERE username = $1
-	`
-	args := []any{username}
-
-	rows, _ := db.Query(ctx, query, args...)
-	user, err := pgx.CollectExactlyOneRow(rows, rowToUser)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrUserNotExist
-		}
-		return nil, err
-	}
-
-	return user, nil
-}
-
-func createUser(ctx context.Context, db *pgxpool.Pool, username string, passwordHash string) (*User, error) {
-	query := `
-		INSERT INTO users (username, password_hash)
-		VALUES ($1, $2)
-		RETURNING id, username, password_hash
-	`
-	args := []any{username, passwordHash}
-
-	rows, _ := db.Query(ctx, query, args...)
-	user, err := pgx.CollectExactlyOneRow(rows, rowToUser)
-	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgerrcode.IsIntegrityConstraintViolation(pgErr.Code) {
-			return nil, ErrUserExist
-		}
-		return nil, err
-	}
-
-	return user, nil
-}
-
-func rowToUser(collectable pgx.CollectableRow) (*User, error) {
-	type row struct {
-		ID           uuid.UUID `db:"id"`
-		Username     string    `db:"username"`
-		PasswordHash string    `db:"password_hash"`
-	}
-
-	collected, err := pgx.RowToStructByName[row](collectable)
-	if err != nil {
-		return nil, err
-	}
-
-	return &User{
-		ID:           collected.ID,
-		Username:     collected.Username,
-		PasswordHash: collected.PasswordHash,
-	}, nil
 }
 
 // PostAPISendCoin implements merch.StrictServerInterface.
@@ -313,6 +242,77 @@ func Authenticator() func(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+var (
+	ErrUserExist    = errors.New("user already exists")
+	ErrUserNotExist = errors.New("user does not exist")
+)
+
+type User struct {
+	ID           uuid.UUID
+	Username     string
+	PasswordHash string
+}
+
+func getUser(ctx context.Context, db *pgxpool.Pool, username string) (*User, error) {
+	query := `
+		SELECT id, username, password_hash
+		FROM users
+		WHERE username = $1
+	`
+	args := []any{username}
+
+	rows, _ := db.Query(ctx, query, args...)
+	user, err := pgx.CollectExactlyOneRow(rows, rowToUser)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrUserNotExist
+		}
+		return nil, err
+	}
+
+	return user, nil
+}
+
+func createUser(ctx context.Context, db *pgxpool.Pool, username string, passwordHash string) (*User, error) {
+	query := `
+		INSERT INTO users (username, password_hash)
+		VALUES ($1, $2)
+		RETURNING id, username, password_hash
+	`
+	args := []any{username, passwordHash}
+
+	rows, _ := db.Query(ctx, query, args...)
+	user, err := pgx.CollectExactlyOneRow(rows, rowToUser)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgerrcode.IsIntegrityConstraintViolation(pgErr.Code) {
+			return nil, ErrUserExist
+		}
+		return nil, err
+	}
+
+	return user, nil
+}
+
+func rowToUser(collectable pgx.CollectableRow) (*User, error) {
+	type row struct {
+		ID           uuid.UUID `db:"id"`
+		Username     string    `db:"username"`
+		PasswordHash string    `db:"password_hash"`
+	}
+
+	collected, err := pgx.RowToStructByName[row](collectable)
+	if err != nil {
+		return nil, err
+	}
+
+	return &User{
+		ID:           collected.ID,
+		Username:     collected.Username,
+		PasswordHash: collected.PasswordHash,
+	}, nil
 }
 
 func serveRequestError(w http.ResponseWriter, r *http.Request, err error) {
