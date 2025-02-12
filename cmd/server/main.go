@@ -151,11 +151,39 @@ func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 	}
 	passwordHash := "fakeHash(" + request.Body.Password + ")"
 
-	user, err := createUser(ctx, h.db, username, passwordHash)
-	if errors.Is(err, ErrUserExist) {
-		user, err = getUserByUsername(ctx, h.db, username)
-	}
-	if err != nil {
+	// HACK: Race condition.
+	user, err := getUserByUsername(ctx, h.db, username)
+	if errors.Is(err, ErrUserNotExist) {
+		tx, err := h.db.Begin(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			err = tx.Rollback(ctx)
+			if err != nil {
+				slog.Error("didn't rollback", "err", err)
+			}
+		}()
+
+		initialBalance := 1000
+		user, err = createUser(ctx, tx, username, passwordHash)
+		if err != nil {
+			return nil, err
+		}
+		user, err = updateUserBalance(ctx, tx, user.ID, initialBalance)
+		if err != nil {
+			return nil, err
+		}
+		_, err = createTransaction(ctx, tx, nil, &user.ID, initialBalance)
+		if err != nil {
+			return nil, err
+		}
+
+		err = tx.Commit(ctx)
+		if err != nil {
+			return nil, err
+		}
+	} else if err != nil {
 		return nil, err
 	}
 
@@ -246,7 +274,7 @@ func (h *Handler) PostAPISendCoin(ctx context.Context, request merch.PostAPISend
 		return nil, err
 	}
 
-	_, err = createTransaction(ctx, tx, fromUserID, toUserID, amount)
+	_, err = createTransaction(ctx, tx, &fromUserID, &toUserID, amount)
 	if err != nil {
 		return nil, err
 	}
@@ -370,7 +398,7 @@ func updateUserBalance(ctx context.Context, db pgxExecutor, id uuid.UUID, balanc
 	return user, nil
 }
 
-func createTransaction(ctx context.Context, db pgxExecutor, fromUserID, toUserID uuid.UUID, amount int) (*Transaction, error) {
+func createTransaction(ctx context.Context, db pgxExecutor, fromUserID, toUserID *uuid.UUID, amount int) (*Transaction, error) {
 	query := `
 		INSERT INTO transactions (from_user_id, to_user_id, amount)
 		VALUES ($1, $2, $3)
