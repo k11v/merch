@@ -289,7 +289,7 @@ func createUser(ctx context.Context, db *pgxpool.Pool, username string, password
 	user, err := pgx.CollectExactlyOneRow(rows, rowToUser)
 	if err != nil {
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgerrcode.IsIntegrityConstraintViolation(pgErr.Code) {
+		if errors.As(err, &pgErr) && pgerrcode.IsIntegrityConstraintViolation(pgErr.Code) && pgErr.ConstraintName == "users_username_idx" {
 			return nil, ErrUserExist
 		}
 		return nil, err
