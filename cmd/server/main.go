@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgerrcode"
@@ -20,6 +21,10 @@ import (
 	"github.com/k11v/merch/api/merch"
 	"github.com/k11v/merch/internal/app"
 )
+
+type ContextValue string
+
+const ContextValueUserID ContextValue = "UserID"
 
 func main() {
 	const envHost = "APP_HOST"
@@ -84,47 +89,20 @@ func run(host string, port int, postgresURL string) error {
 func newHTTPServer(db *pgxpool.Pool, host string, port int) *http.Server {
 	handler := NewHandler(db)
 
-	strictMiddlewares := []merch.StrictMiddlewareFunc{
-		StrictAuthenticator(),
-	}
 	middlewares := []merch.MiddlewareFunc{
-		Authenticator(), // Should be redundant.
-	}
-
-	responseErrorHandler := func(w http.ResponseWriter, r *http.Request, err error) {
-		slog.Error("server error", "err", err)
-
-		errors := new(string)
-		*errors = "internal server error"
-		response := merch.ErrorResponse{Errors: errors}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(response)
-	}
-	requestErrorHandler := func(w http.ResponseWriter, r *http.Request, err error) {
-		errors := new(string)
-		*errors = err.Error()
-		response := merch.ErrorResponse{Errors: errors}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		encodeErr := json.NewEncoder(w).Encode(response)
-		if encodeErr != nil {
-			responseErrorHandler(w, r, encodeErr)
-		}
+		Authenticator(),
 	}
 
 	mux := http.NewServeMux()
 	ssi := merch.StrictServerInterface(handler)
-	si := merch.NewStrictHandlerWithOptions(ssi, strictMiddlewares, merch.StrictHTTPServerOptions{
-		RequestErrorHandlerFunc:  requestErrorHandler,
-		ResponseErrorHandlerFunc: responseErrorHandler,
+	si := merch.NewStrictHandlerWithOptions(ssi, nil, merch.StrictHTTPServerOptions{
+		RequestErrorHandlerFunc:  serveRequestError,
+		ResponseErrorHandlerFunc: serveResponseError,
 	})
 	h := merch.HandlerWithOptions(si, merch.StdHTTPServerOptions{
 		BaseRouter:       mux,
 		Middlewares:      middlewares,
-		ErrorHandlerFunc: requestErrorHandler,
+		ErrorHandlerFunc: serveRequestError,
 	})
 
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
@@ -160,14 +138,14 @@ func (h *Handler) GetAPIInfo(ctx context.Context, request merch.GetAPIInfoReques
 // PostAPIAuth implements merch.StrictServerInterface.
 func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequestObject) (merch.PostAPIAuthResponseObject, error) {
 	if request.Body.Username == "" {
-		errors := newString("empty username")
-		return merch.PostAPIAuth400JSONResponse{Errors: errors}, nil
+		errors := "empty username"
+		return merch.PostAPIAuth400JSONResponse{Errors: &errors}, nil
 	}
 	username := request.Body.Username
 
 	if request.Body.Password == "" {
-		errors := newString("empty password")
-		return merch.PostAPIAuth400JSONResponse{Errors: errors}, nil
+		errors := "empty password"
+		return merch.PostAPIAuth400JSONResponse{Errors: &errors}, nil
 	}
 	passwordHash := "fakeHash(" + request.Body.Password + ")"
 
@@ -180,12 +158,12 @@ func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 	}
 
 	if user.PasswordHash != passwordHash {
-		errors := newString("invalid username or password")
-		return merch.PostAPIAuth401JSONResponse{Errors: errors}, nil
+		errors := "invalid username or password"
+		return merch.PostAPIAuth401JSONResponse{Errors: &errors}, nil
 	}
 
-	token := newString("fakeToken(" + user.ID.String() + ")")
-	return merch.PostAPIAuth200JSONResponse{Token: token}, nil
+	token := "fakeToken(" + user.ID.String() + ")"
+	return merch.PostAPIAuth200JSONResponse{Token: &token}, nil
 }
 
 var (
@@ -264,30 +242,102 @@ func (h *Handler) PostAPISendCoin(ctx context.Context, request merch.PostAPISend
 	panic("unimplemented")
 }
 
-func StrictAuthenticator() merch.StrictMiddlewareFunc {
-	return func(f merch.StrictHandlerFunc, operationID string) merch.StrictHandlerFunc {
-		return func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (response interface{}, err error) {
-			switch operationID {
-			case "PostAPIAuth":
-			default:
-				// Do authentication.
-			}
-			return f(ctx, w, r, request)
-		}
-	}
-}
-
 func Authenticator() func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch {
 			case r.Method == "POST" && r.URL.Path == "/api/auth":
 			default:
-				// Do authentication.
+				const headerAuthorization = "Authorization"
+				authorizationHeader := r.Header.Get(headerAuthorization)
+				if authorizationHeader == "" {
+					errors := fmt.Sprintf("empty %s header", headerAuthorization)
+					response := merch.ErrorResponse{Errors: &errors}
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusBadRequest)
+					err := json.NewEncoder(w).Encode(response)
+					if err != nil {
+						serveResponseError(w, r, err)
+						return
+					}
+					return
+				}
+
+				scheme, params, found := strings.Cut(authorizationHeader, " ")
+				if !strings.EqualFold(scheme, "Bearer") || !found {
+					errors := fmt.Sprintf("invalid %s header scheme", headerAuthorization)
+					response := merch.ErrorResponse{Errors: &errors}
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusBadRequest)
+					err := json.NewEncoder(w).Encode(response)
+					if err != nil {
+						serveResponseError(w, r, err)
+						return
+					}
+					return
+				}
+
+				var userID uuid.UUID
+				var err error
+				if strings.HasPrefix(params, "fakeToken(") && strings.HasSuffix(params, ")") {
+					userID, err = uuid.Parse(params[10 : len(params)-1])
+					if err != nil {
+						errors := fmt.Sprintf("%s header: %v", headerAuthorization, err)
+						response := merch.ErrorResponse{Errors: &errors}
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusUnauthorized)
+						err = json.NewEncoder(w).Encode(response)
+						if err != nil {
+							serveResponseError(w, r, err)
+							return
+						}
+						return
+					}
+				} else {
+					errors := fmt.Sprintf("invalid %s header token", headerAuthorization)
+					response := merch.ErrorResponse{Errors: &errors}
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusUnauthorized)
+					err = json.NewEncoder(w).Encode(response)
+					if err != nil {
+						serveResponseError(w, r, err)
+						return
+					}
+					return
+				}
+
+				ctx := r.Context()
+				ctx = context.WithValue(ctx, ContextValueUserID, userID)
+				r = r.WithContext(ctx)
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func serveRequestError(w http.ResponseWriter, r *http.Request, err error) {
+	errors := new(string)
+	*errors = err.Error()
+	response := merch.ErrorResponse{Errors: errors}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	encodeErr := json.NewEncoder(w).Encode(response)
+	if encodeErr != nil {
+		serveResponseError(w, r, encodeErr)
+	}
+}
+
+func serveResponseError(w http.ResponseWriter, r *http.Request, err error) {
+	slog.Error("server error", "err", err)
+
+	errors := new(string)
+	*errors = "internal server error"
+	response := merch.ErrorResponse{Errors: errors}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusInternalServerError)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 func newString(s string) *string {
