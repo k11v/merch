@@ -14,7 +14,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS users_username_idx ON users (username);
 CREATE TABLE IF NOT EXISTS transfers (
     id uuid NOT NULL DEFAULT uuid_generate_v4(),
     sender_id uuid,
-    receiver_id uuid NOT NULL,
+    receiver_id uuid,
     coin_amount integer NOT NULL,
     PRIMARY KEY (id),
     FOREIGN KEY (sender_id) REFERENCES users (id),
