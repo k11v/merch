@@ -255,6 +255,7 @@ type User struct {
 	ID           uuid.UUID
 	Username     string
 	PasswordHash string
+	CoinAmount   int
 }
 
 func getUser(ctx context.Context, db *pgxpool.Pool, username string) (*User, error) {
@@ -315,6 +316,7 @@ func rowToUser(collectable pgx.CollectableRow) (*User, error) {
 		ID:           collected.ID,
 		Username:     collected.Username,
 		PasswordHash: collected.PasswordHash,
+		CoinAmount:   collected.CoinAmount,
 	}, nil
 }
 
