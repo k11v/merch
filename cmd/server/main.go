@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -22,6 +24,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/crypto/argon2"
 
 	"github.com/k11v/merch/api/merch"
 	"github.com/k11v/merch/internal/app"
@@ -1033,4 +1036,28 @@ func readFileWithED25519PrivateKey(name string) (ed25519.PrivateKey, error) {
 		return ed25519.PrivateKey{}, errors.New("not an ed25519 private key file")
 	}
 	return privateKey, nil
+}
+
+func hashPassword(password string) string {
+	const (
+		saltLen     = 16
+		timeCost    = 1
+		memoryCost  = 64 * 1024
+		parallelism = 1
+		hashLen     = 32
+	)
+
+	salt := make([]byte, saltLen)
+	_, err := rand.Read(salt)
+	if err != nil {
+		panic(err)
+	}
+
+	hash := argon2.IDKey([]byte(password), salt, timeCost, memoryCost, parallelism, hashLen)
+
+	saltBase64 := base64.RawStdEncoding.EncodeToString(salt)
+	hashBase64 := base64.RawStdEncoding.EncodeToString(hash)
+	encoded := fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s", argon2.Version, memoryCost, timeCost, parallelism, saltBase64, hashBase64)
+
+	return encoded
 }
