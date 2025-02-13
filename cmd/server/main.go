@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -60,7 +62,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	err := run(host, port, postgresURL)
+	const envJWTVerificationKeyFile = "APP_JWT_VERIFICATION_KEY_FILE"
+	jwtVerificationKeyFile := os.Getenv(envJWTVerificationKeyFile)
+	if jwtVerificationKeyFile == "" {
+		err := fmt.Errorf("%s env is empty", envJWTVerificationKeyFile)
+		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	const envJWTSignatureKeyFile = "APP_JWT_SIGNATURE_KEY_FILE"
+	jwtSignatureKeyFile := os.Getenv(envJWTSignatureKeyFile)
+	if jwtSignatureKeyFile == "" {
+		err := fmt.Errorf("%s env is empty", envJWTSignatureKeyFile)
+		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	err := run(host, port, postgresURL, jwtVerificationKeyFile, jwtSignatureKeyFile)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -69,7 +87,7 @@ func main() {
 	os.Exit(0)
 }
 
-func run(host string, port int, postgresURL string) error {
+func run(host string, port int, postgresURL, jwtVerificationKeyFile, jwtSignatureKeyFile string) error {
 	ctx := context.Background()
 
 	postgresPool, err := app.NewPostgresPool(ctx, postgresURL)
@@ -78,7 +96,17 @@ func run(host string, port int, postgresURL string) error {
 	}
 	defer postgresPool.Close()
 
-	httpServer := newHTTPServer(postgresPool, host, port)
+	jwtVerificationKey, err := readFileWithED25519PublicKey(jwtVerificationKeyFile)
+	if err != nil {
+		return err
+	}
+
+	jwtSignatureKey, err := readFileWithED25519PrivateKey(jwtSignatureKeyFile)
+	if err != nil {
+		return err
+	}
+
+	httpServer := newHTTPServer(postgresPool, host, port, jwtVerificationKey, jwtSignatureKey)
 
 	slog.Info("starting HTTP server", "addr", httpServer.Addr)
 	err = httpServer.ListenAndServe()
@@ -89,8 +117,8 @@ func run(host string, port int, postgresURL string) error {
 	return nil
 }
 
-func newHTTPServer(db *pgxpool.Pool, host string, port int) *http.Server {
-	handler := NewHandler(db)
+func newHTTPServer(db *pgxpool.Pool, host string, port int, jwtVerificationKey ed25519.PublicKey, jwtSignatureKey ed25519.PrivateKey) *http.Server {
+	handler := NewHandler(db, jwtSignatureKey)
 
 	mux := http.NewServeMux()
 	ssi := merch.StrictServerInterface(handler)
@@ -104,7 +132,7 @@ func newHTTPServer(db *pgxpool.Pool, host string, port int) *http.Server {
 	})
 
 	middlewares := []func(next http.Handler) http.Handler{
-		Authenticator(),
+		Authenticator(jwtVerificationKey),
 	}
 	for _, m := range middlewares {
 		h = m(h)
@@ -123,11 +151,12 @@ func newHTTPServer(db *pgxpool.Pool, host string, port int) *http.Server {
 var _ merch.StrictServerInterface = (*Handler)(nil)
 
 type Handler struct {
-	db *pgxpool.Pool
+	db              *pgxpool.Pool
+	jwtSignatureKey ed25519.PrivateKey
 }
 
-func NewHandler(db *pgxpool.Pool) *Handler {
-	return &Handler{db: db}
+func NewHandler(db *pgxpool.Pool, jwtSignatureKey ed25519.PrivateKey) *Handler {
+	return &Handler{db: db, jwtSignatureKey: jwtSignatureKey}
 }
 
 // GetAPIBuyItem implements merch.StrictServerInterface.
@@ -331,8 +360,18 @@ func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 		return merch.PostAPIAuth401JSONResponse{Errors: &errors}, nil
 	}
 
-	token := "fakeToken(" + user.ID.String() + ")"
-	return merch.PostAPIAuth200JSONResponse{Token: &token}, nil
+	token := Token{
+		UserID:    user.ID,
+		ExpiresAt: time.Now().Add(time.Hour),
+		IssuedAt:  time.Now(),
+		ID:        uuid.New(),
+	}
+	tokenString, err := formatAndSignToken(&token, h.jwtSignatureKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return merch.PostAPIAuth200JSONResponse{Token: &tokenString}, nil
 }
 
 // PostAPISendCoin implements merch.StrictServerInterface.
@@ -821,7 +860,7 @@ func serveResponseError(w http.ResponseWriter, r *http.Request, err error) {
 	_ = json.NewEncoder(w).Encode(response)
 }
 
-func Authenticator() func(next http.Handler) http.Handler {
+func Authenticator(jwtVerificationKey ed25519.PublicKey) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch {
@@ -856,24 +895,9 @@ func Authenticator() func(next http.Handler) http.Handler {
 					return
 				}
 
-				var userID uuid.UUID
-				var err error
-				if strings.HasPrefix(params, "fakeToken(") && strings.HasSuffix(params, ")") {
-					userID, err = uuid.Parse(params[10 : len(params)-1])
-					if err != nil {
-						errors := fmt.Sprintf("%s header: %v", headerAuthorization, err)
-						response := merch.ErrorResponse{Errors: &errors}
-						w.Header().Set("Content-Type", "application/json")
-						w.WriteHeader(http.StatusUnauthorized)
-						err = json.NewEncoder(w).Encode(response)
-						if err != nil {
-							serveResponseError(w, r, err)
-							return
-						}
-						return
-					}
-				} else {
-					errors := fmt.Sprintf("invalid %s header token", headerAuthorization)
+				token, err := parseAndVerifyToken(params, jwtVerificationKey)
+				if err != nil {
+					errors := fmt.Sprintf("%s header: %v", headerAuthorization, err)
 					response := merch.ErrorResponse{Errors: &errors}
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusUnauthorized)
@@ -884,6 +908,7 @@ func Authenticator() func(next http.Handler) http.Handler {
 					}
 					return
 				}
+				userID := token.UserID
 
 				ctx := r.Context()
 				ctx = context.WithValue(ctx, ContextValueUserID, userID)
@@ -920,7 +945,7 @@ func formatAndSignToken(token *Token, jwtSignatureKey ed25519.PrivateKey) (strin
 	return jwtToken.SignedString(jwtSignatureKey)
 }
 
-func parseAndValidateToken(s string, jwtVerificationKey ed25519.PublicKey) (*Token, error) {
+func parseAndVerifyToken(s string, jwtVerificationKey ed25519.PublicKey) (*Token, error) {
 	jwtToken, err := jwt.ParseWithClaims(
 		s,
 		&jwt.RegisteredClaims{},
@@ -966,4 +991,46 @@ func parseAndValidateToken(s string, jwtVerificationKey ed25519.PublicKey) (*Tok
 		IssuedAt:  issuedAt,
 		ID:        id,
 	}, nil
+}
+
+func readFileWithED25519PublicKey(name string) (ed25519.PublicKey, error) {
+	publicKeyPemBytes, err := os.ReadFile(name)
+	if err != nil {
+		return ed25519.PublicKey{}, err
+	}
+	publicKeyPemBlock, _ := pem.Decode(publicKeyPemBytes)
+	if publicKeyPemBlock == nil {
+		return ed25519.PublicKey{}, err
+	}
+	publicKeyX509Bytes := publicKeyPemBlock.Bytes
+	publicKeyAny, err := x509.ParsePKIXPublicKey(publicKeyX509Bytes)
+	if err != nil {
+		return ed25519.PublicKey{}, err
+	}
+	publicKey, ok := publicKeyAny.(ed25519.PublicKey)
+	if !ok {
+		return ed25519.PublicKey{}, errors.New("not an ed25519 public key file")
+	}
+	return publicKey, nil
+}
+
+func readFileWithED25519PrivateKey(name string) (ed25519.PrivateKey, error) {
+	privateKeyPemBytes, err := os.ReadFile(name)
+	if err != nil {
+		return ed25519.PrivateKey{}, err
+	}
+	privateKeyPemBlock, _ := pem.Decode(privateKeyPemBytes)
+	if privateKeyPemBlock == nil {
+		return ed25519.PrivateKey{}, err
+	}
+	privateKeyX509Bytes := privateKeyPemBlock.Bytes
+	privateKeyAny, err := x509.ParsePKCS8PrivateKey(privateKeyX509Bytes)
+	if err != nil {
+		return ed25519.PrivateKey{}, err
+	}
+	privateKey, ok := privateKeyAny.(ed25519.PrivateKey)
+	if !ok {
+		return ed25519.PrivateKey{}, errors.New("not an ed25519 private key file")
+	}
+	return privateKey, nil
 }
