@@ -134,7 +134,80 @@ func (h *Handler) GetAPIBuyItem(ctx context.Context, request merch.GetAPIBuyItem
 
 // GetAPIInfo implements merch.StrictServerInterface.
 func (h *Handler) GetAPIInfo(ctx context.Context, request merch.GetAPIInfoRequestObject) (merch.GetAPIInfoResponseObject, error) {
-	return merch.GetAPIInfo200JSONResponse{}, nil
+	userID, ok := ctx.Value(ContextValueUserID).(uuid.UUID)
+	if !ok {
+		panic(fmt.Errorf("can't get %s context value", ContextValueUserID))
+	}
+
+	user, err := getUser(ctx, h.db, userID)
+	if err != nil {
+		return nil, err
+	}
+	transactions, err := getTransactionsByUserID(ctx, h.db, userID)
+	if err != nil {
+		return nil, err
+	}
+	userItems, err := getUserItems(ctx, h.db, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	coins := user.Balance
+
+	type receivedHistoryItem = struct {
+		Amount   *int    `json:"amount,omitempty"`
+		FromUser *string `json:"fromUser,omitempty"`
+	}
+	type sentHistoryItem = struct {
+		Amount *int    `json:"amount,omitempty"`
+		ToUser *string `json:"toUser,omitempty"`
+	}
+	type history = struct {
+		Received *[]receivedHistoryItem `json:"received,omitempty"`
+		Sent     *[]sentHistoryItem     `json:"sent,omitempty"`
+	}
+	received := make([]receivedHistoryItem, 0)
+	sent := make([]sentHistoryItem, 0)
+	for _, transaction := range transactions {
+		fromUserID := transaction.FromUserID
+		toUserID := transaction.ToUserID
+		if fromUserID == nil || toUserID == nil {
+			continue
+		}
+		if *fromUserID == userID {
+			sent = append(sent, sentHistoryItem{
+				Amount: &transaction.Amount,
+				ToUser: transaction.ToUsername,
+			})
+		}
+		if *toUserID == userID {
+			received = append(received, receivedHistoryItem{
+				Amount:   &transaction.Amount,
+				FromUser: transaction.FromUsername,
+			})
+		}
+	}
+
+	type inventoryItem = struct {
+		Quantity *int    `json:"quantity,omitempty"`
+		Type     *string `json:"type,omitempty"`
+	}
+	inventory := make([]inventoryItem, len(userItems))
+	for i, userItem := range userItems {
+		inventory[i] = inventoryItem{
+			Quantity: &userItem.Amount,
+			Type:     &userItem.ItemName,
+		}
+	}
+
+	return merch.GetAPIInfo200JSONResponse{
+		CoinHistory: &history{
+			Received: &received,
+			Sent:     &sent,
+		},
+		Coins:     &coins,
+		Inventory: &inventory,
+	}, nil
 }
 
 // PostAPIAuth implements merch.StrictServerInterface.
@@ -160,7 +233,7 @@ func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 		}
 		defer func() {
 			err = tx.Rollback(ctx)
-			if err != nil {
+			if err != nil && !errors.Is(err, pgx.ErrTxClosed) {
 				slog.Error("didn't rollback", "err", err)
 			}
 		}()
@@ -198,6 +271,11 @@ func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 
 // PostAPISendCoin implements merch.StrictServerInterface.
 func (h *Handler) PostAPISendCoin(ctx context.Context, request merch.PostAPISendCoinRequestObject) (merch.PostAPISendCoinResponseObject, error) {
+	requestUserID, ok := ctx.Value(ContextValueUserID).(uuid.UUID)
+	if !ok {
+		panic(fmt.Errorf("can't get %s context value", ContextValueUserID))
+	}
+
 	toUsername := request.Body.ToUser
 	if toUsername == "" {
 		errors := "empty toUser body value"
@@ -210,12 +288,7 @@ func (h *Handler) PostAPISendCoin(ctx context.Context, request merch.PostAPISend
 		return merch.PostAPISendCoin400JSONResponse{Errors: &errors}, nil
 	}
 
-	currentUserID, ok := ctx.Value(ContextValueUserID).(uuid.UUID)
-	if !ok {
-		panic(fmt.Errorf("can't get %s context value", ContextValueUserID))
-	}
-
-	fromUserID := currentUserID
+	fromUserID := requestUserID
 
 	toUser, err := getUserByUsername(ctx, h.db, toUsername)
 	if err != nil {
@@ -238,7 +311,7 @@ func (h *Handler) PostAPISendCoin(ctx context.Context, request merch.PostAPISend
 	}
 	defer func() {
 		err = tx.Rollback(ctx)
-		if err != nil {
+		if err != nil && !errors.Is(err, pgx.ErrTxClosed) {
 			slog.Error("didn't rollback", "err", err)
 		}
 	}()
@@ -330,17 +403,26 @@ func rowToUser(collectable pgx.CollectableRow) (*User, error) {
 
 type Transaction struct {
 	ID         uuid.UUID
-	FromUserID uuid.UUID
-	ToUserID   uuid.UUID
+	FromUserID *uuid.UUID
+	ToUserID   *uuid.UUID
 	Amount     int
+
+	FromUsername *string
+	ToUsername   *string
+}
+
+type Item struct {
+	ID    uuid.UUID
+	Name  string
+	Price int
 }
 
 func rowToTransaction(collectable pgx.CollectableRow) (*Transaction, error) {
 	type row struct {
-		ID         uuid.UUID `db:"id"`
-		FromUserID uuid.UUID `db:"from_user_id"`
-		ToUserID   uuid.UUID `db:"to_user_id"`
-		Amount     int       `db:"amount"`
+		ID         uuid.UUID  `db:"id"`
+		FromUserID *uuid.UUID `db:"from_user_id"`
+		ToUserID   *uuid.UUID `db:"to_user_id"`
+		Amount     int        `db:"amount"`
 	}
 
 	collected, err := pgx.RowToStructByName[row](collectable)
@@ -354,6 +436,137 @@ func rowToTransaction(collectable pgx.CollectableRow) (*Transaction, error) {
 		ToUserID:   collected.ToUserID,
 		Amount:     collected.Amount,
 	}, nil
+}
+
+func rowToTransactionWithUsernames(collectable pgx.CollectableRow) (*Transaction, error) {
+	type row struct {
+		ID         uuid.UUID  `db:"id"`
+		FromUserID *uuid.UUID `db:"from_user_id"`
+		ToUserID   *uuid.UUID `db:"to_user_id"`
+		Amount     int        `db:"amount"`
+
+		FromUsername *string `db:"from_username"`
+		ToUsername   *string `db:"to_username"`
+	}
+
+	collected, err := pgx.RowToStructByName[row](collectable)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Transaction{
+		ID:           collected.ID,
+		FromUserID:   collected.FromUserID,
+		ToUserID:     collected.ToUserID,
+		Amount:       collected.Amount,
+		FromUsername: collected.FromUsername,
+		ToUsername:   collected.ToUsername,
+	}, nil
+}
+
+func rowToItem(collectable pgx.CollectableRow) (*Item, error) {
+	type row struct {
+		ID    uuid.UUID `db:"id"`
+		Name  string    `db:"name"`
+		Price int       `db:"price"`
+	}
+
+	collected, err := pgx.RowToStructByName[row](collectable)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Item{
+		ID:    collected.ID,
+		Name:  collected.Name,
+		Price: collected.Price,
+	}, nil
+}
+
+type UserItem struct {
+	UserID   uuid.UUID
+	ItemID   uuid.UUID
+	ItemName string
+	Amount   int
+}
+
+func rowToUserItemWithName(collectable pgx.CollectableRow) (*UserItem, error) {
+	type row struct {
+		UserID uuid.UUID `db:"user_id"`
+		ItemID uuid.UUID `db:"item_id"`
+		Amount int       `db:"amount"`
+
+		ItemName string `db:"item_name"`
+	}
+
+	collected, err := pgx.RowToStructByName[row](collectable)
+	if err != nil {
+		return nil, err
+	}
+
+	return &UserItem{
+		UserID:   collected.UserID,
+		ItemID:   collected.ItemID,
+		Amount:   collected.Amount,
+		ItemName: collected.ItemName,
+	}, nil
+}
+
+func getTransactionsByUserID(ctx context.Context, db pgxExecutor, userID uuid.UUID) ([]*Transaction, error) {
+	query := `
+		SELECT t.id, t.from_user_id, from_u.username as from_username, t.to_user_id, to_u.username as to_username, t.amount
+		FROM transactions t
+		LEFT JOIN users from_u ON t.from_user_id = from_u.id
+		LEFT JOIN users to_u ON t.to_user_id = to_u.id
+		WHERE t.from_user_id = $1 OR t.to_user_id = $1
+	`
+	args := []any{userID}
+
+	rows, _ := db.Query(ctx, query, args...)
+	transactions, err := pgx.CollectRows(rows, rowToTransactionWithUsernames)
+	if err != nil {
+		return nil, err
+	}
+
+	return transactions, nil
+}
+
+func getUserItems(ctx context.Context, db pgxExecutor, userID uuid.UUID) ([]*UserItem, error) {
+	query := `
+		SELECT ui.user_id, ui.item_id, i.name AS item_name, ui.amount
+		FROM users_items ui
+		JOIN items i ON ui.item_id = i.id
+		WHERE ui.user_id = $1
+	`
+	args := []any{userID}
+
+	rows, _ := db.Query(ctx, query, args...)
+	userItems, err := pgx.CollectRows(rows, rowToUserItemWithName)
+	if err != nil {
+		return nil, err
+	}
+
+	return userItems, nil
+}
+
+func getUser(ctx context.Context, db pgxExecutor, id uuid.UUID) (*User, error) {
+	query := `
+		SELECT id, username, password_hash, balance
+		FROM users
+		WHERE id = $1
+	`
+	args := []any{id}
+
+	rows, _ := db.Query(ctx, query, args...)
+	user, err := pgx.CollectExactlyOneRow(rows, rowToUser)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrUserNotExist
+		}
+		return nil, err
+	}
+
+	return user, nil
 }
 
 func getUserForUpdate(ctx context.Context, db pgxExecutor, id uuid.UUID) (*User, error) {
