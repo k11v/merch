@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/subtle"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -476,9 +477,10 @@ type pgxExecutor interface {
 }
 
 var (
-	ErrItemNotExist = errors.New("item does not exist")
-	ErrUserExist    = errors.New("user already exists")
-	ErrUserNotExist = errors.New("user does not exist")
+	ErrItemNotExist     = errors.New("item does not exist")
+	ErrUserExist        = errors.New("user already exists")
+	ErrUserNotExist     = errors.New("user does not exist")
+	ErrPasswordNotMatch = errors.New("password does not match hash")
 )
 
 type User struct {
@@ -1038,26 +1040,54 @@ func readFileWithED25519PrivateKey(name string) (ed25519.PrivateKey, error) {
 	return privateKey, nil
 }
 
-func hashPassword(password string) string {
-	const (
-		saltLen     = 16
-		timeCost    = 1
-		memoryCost  = 64 * 1024
-		parallelism = 1
-		hashLen     = 32
-	)
+type Argon2IDPasswordHasher struct {
+	time        uint32
+	memory      uint32
+	parallelism uint8
+	saltLen     int
+	hashLen     uint32
+}
 
-	salt := make([]byte, saltLen)
+func NewArgon2IDPasswordHasher() *Argon2IDPasswordHasher {
+	return &Argon2IDPasswordHasher{
+		time:        1,
+		memory:      64 * 1024,
+		parallelism: 1,
+		saltLen:     16,
+		hashLen:     32,
+	}
+}
+
+// Hash derives a hash from the password and returns it in the PHC string format.
+// See https://github.com/P-H-C/phc-string-format/blob/master/phc-sf-spec.md.
+func (ph *Argon2IDPasswordHasher) Hash(password string) string {
+	salt := make([]byte, ph.saltLen)
 	_, err := rand.Read(salt)
 	if err != nil {
 		panic(err)
 	}
 
-	hash := argon2.IDKey([]byte(password), salt, timeCost, memoryCost, parallelism, hashLen)
+	hash := argon2.IDKey([]byte(password), salt, ph.time, ph.memory, ph.parallelism, ph.hashLen)
 
-	saltBase64 := base64.RawStdEncoding.EncodeToString(salt)
-	hashBase64 := base64.RawStdEncoding.EncodeToString(hash)
-	encoded := fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s", argon2.Version, memoryCost, timeCost, parallelism, saltBase64, hashBase64)
+	saltB64 := base64.RawStdEncoding.EncodeToString(salt)
+	hashB64 := base64.RawStdEncoding.EncodeToString(hash)
+	encoded := fmt.Sprintf(
+		"$argon2id$v=%d$t=%d,m=%d,p=%d$%s$%s",
+		argon2.Version,
+		ph.time,
+		ph.memory,
+		ph.parallelism,
+		saltB64,
+		hashB64,
+	)
 
 	return encoded
+}
+
+func (ph *Argon2IDPasswordHasher) Verify(password, hash string) error {
+	newHash := ph.Hash(password)
+	if subtle.ConstantTimeCompare([]byte(newHash), []byte(hash)) == 1 {
+		return nil
+	}
+	return ErrPasswordNotMatch
 }
