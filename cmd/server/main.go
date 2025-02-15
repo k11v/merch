@@ -322,11 +322,20 @@ func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 		errors := "empty password"
 		return merch.PostAPIAuth400JSONResponse{Errors: &errors}, nil
 	}
-	passwordHash := "fakeHash(" + request.Body.Password + ")"
+	password := request.Body.Password
 
 	// HACK: Race condition.
 	user, err := getUserByUsername(ctx, h.db, username)
-	if errors.Is(err, ErrUserNotExist) {
+	if err == nil {
+		err = VerifyPasswordArgon2ID(password, user.PasswordHash)
+		if err != nil {
+			if errors.Is(err, ErrPasswordNotMatch) {
+				errors := "invalid password"
+				return merch.PostAPIAuth401JSONResponse{Errors: &errors}, nil
+			}
+			return nil, err
+		}
+	} else if errors.Is(err, ErrUserNotExist) {
 		tx, err := h.db.Begin(ctx)
 		if err != nil {
 			return nil, err
@@ -339,6 +348,11 @@ func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 		}()
 
 		initialBalance := 1000
+		passwordHash, err := HashPasswordArgon2ID(password, DefaultArgon2IDParams())
+		if err != nil {
+			return nil, err
+		}
+
 		user, err = createUser(ctx, tx, username, passwordHash)
 		if err != nil {
 			return nil, err
@@ -356,13 +370,8 @@ func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 		if err != nil {
 			return nil, err
 		}
-	} else if err != nil {
+	} else {
 		return nil, err
-	}
-
-	if user.PasswordHash != passwordHash {
-		errors := "invalid username or password"
-		return merch.PostAPIAuth401JSONResponse{Errors: &errors}, nil
 	}
 
 	token := Token{
@@ -1066,7 +1075,7 @@ func HashPasswordArgon2ID(password string, params *Argon2IDParams) (string, erro
 	salt := make([]byte, params.SaltLen)
 	_, err := rand.Read(salt)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("HashPasswordArgon2ID: %w", err)
 	}
 	hashRaw := argon2.IDKey(
 		[]byte(password),
@@ -1076,16 +1085,16 @@ func HashPasswordArgon2ID(password string, params *Argon2IDParams) (string, erro
 		params.Parallelism,
 		params.HashLen,
 	)
-	hashEnc := FormatPasswordHashArgon2ID(hashRaw, salt, params)
+	hashEnc := formatPasswordHashArgon2ID(hashRaw, salt, params)
 	return hashEnc, nil
 }
 
 // VerifyPasswordArgon2ID checks that the password matches
 // the Argon2ID hash provided in the PHC string format.
 func VerifyPasswordArgon2ID(password, passwordHash string) error {
-	wantHash, salt, params, err := ParsePasswordHashArgon2ID(passwordHash)
+	wantHash, salt, params, err := parsePasswordHashArgon2ID(passwordHash)
 	if err != nil {
-		return err
+		return fmt.Errorf("VerifyPasswordArgon2ID: %w", err)
 	}
 	gotHash := argon2.IDKey(
 		[]byte(password),
@@ -1098,10 +1107,10 @@ func VerifyPasswordArgon2ID(password, passwordHash string) error {
 	if subtle.ConstantTimeCompare(gotHash, wantHash) == 1 {
 		return nil
 	}
-	return ErrPasswordNotMatch
+	return fmt.Errorf("VerifyPasswordArgon2ID: %w", ErrPasswordNotMatch)
 }
 
-func ParsePasswordHashArgon2ID(passwordHash string) (hash []byte, salt []byte, params *Argon2IDParams, err error) {
+func parsePasswordHashArgon2ID(passwordHash string) (hash []byte, salt []byte, params *Argon2IDParams, err error) {
 	sr := strings.NewReader(passwordHash)
 
 	var (
@@ -1154,7 +1163,7 @@ func ParsePasswordHashArgon2ID(passwordHash string) (hash []byte, salt []byte, p
 	return hash, salt, params, nil
 }
 
-func FormatPasswordHashArgon2ID(hash []byte, salt []byte, params *Argon2IDParams) string {
+func formatPasswordHashArgon2ID(hash []byte, salt []byte, params *Argon2IDParams) string {
 	saltB64 := base64.RawStdEncoding.EncodeToString(salt)
 	hashB64 := base64.RawStdEncoding.EncodeToString(hash)
 
