@@ -1111,45 +1111,57 @@ func VerifyPasswordArgon2ID(password, passwordHash string) error {
 }
 
 func parsePasswordHashArgon2ID(passwordHash string) (hash []byte, salt []byte, params *Argon2IDParams, err error) {
-	sr := strings.NewReader(passwordHash)
+	fieldsString, found := strings.CutPrefix(passwordHash, "$")
+	if !found {
+		return nil, nil, nil, errors.New("invalid prefix")
+	}
+	fields := strings.Split(fieldsString, "$")
+	if len(fields) != 5 {
+		return nil, nil, nil, errors.New("invalid fields count")
+	}
 
+	idField := fields[0]
+	if idField != "argon2id" {
+		return nil, nil, nil, errors.New("unsupported id")
+	}
+
+	versionField := fields[1]
+	if versionField != "v="+strconv.Itoa(argon2.Version) {
+		return nil, nil, nil, errors.New("unsupported version")
+	}
+
+	paramsFieldReader := strings.NewReader(fields[2])
 	var (
-		id      string
-		version int
-		m       uint32
-		t       uint32
-		p       uint8
-		saltB64 string
-		hashB64 string
+		m uint32
+		t uint32
+		p uint8
 	)
-	_, err = fmt.Fscanf(sr, "$%s$v=%d$m=%d,t=%d,p=%d$%s$%s", &id, &version, &m, &t, &p, &saltB64, &hashB64)
+	_, err = fmt.Fscanf(paramsFieldReader, "m=%d,t=%d,p=%d", &m, &t, &p)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("params: %w", err)
 	}
-	if sr.Len() != 0 {
-		return nil, nil, nil, errors.New("extra string")
+	if paramsFieldReader.Len() != 0 {
+		return nil, nil, nil, errors.New("params: extra string")
 	}
 
-	if id != "argon2id" || version != argon2.Version {
-		return nil, nil, nil, errors.New("unsupported id or version")
-	}
-
-	salt, err = base64.RawStdEncoding.DecodeString(saltB64)
+	saltField := fields[3]
+	salt, err = base64.RawStdEncoding.DecodeString(saltField)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("salt: %w", err)
 	}
 	saltLen, err := intToUint32(len(salt))
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("salt: %w", err)
 	}
 
-	hash, err = base64.RawStdEncoding.DecodeString(hashB64)
+	hashField := fields[4]
+	hash, err = base64.RawStdEncoding.DecodeString(hashField)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("hash: %w", err)
 	}
 	hashLen, err := intToUint32(len(hash))
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("hash: %w", err)
 	}
 
 	params = &Argon2IDParams{
