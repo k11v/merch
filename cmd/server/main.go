@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -1040,54 +1041,137 @@ func readFileWithED25519PrivateKey(name string) (ed25519.PrivateKey, error) {
 	return privateKey, nil
 }
 
-type Argon2IDPasswordHasher struct {
-	time        uint32
-	memory      uint32
-	parallelism uint8
-	saltLen     int
-	hashLen     uint32
+type Argon2IDParams struct {
+	Memory      uint32
+	Time        uint32
+	Parallelism uint8
+	SaltLen     uint32
+	HashLen     uint32
 }
 
-func NewArgon2IDPasswordHasher() *Argon2IDPasswordHasher {
-	return &Argon2IDPasswordHasher{
-		time:        1,
-		memory:      64 * 1024,
-		parallelism: 1,
-		saltLen:     16,
-		hashLen:     32,
+func DefaultArgon2IDParams() *Argon2IDParams {
+	return &Argon2IDParams{
+		Memory:      1,
+		Time:        64 * 1024,
+		Parallelism: 1,
+		SaltLen:     16,
+		HashLen:     32,
 	}
 }
 
-// Hash derives a hash from the password and returns it in the PHC string format.
+// HashPasswordArgon2ID derives an Argon2ID hash from the password
+// and returns it in the PHC string format.
 // See https://github.com/P-H-C/phc-string-format/blob/master/phc-sf-spec.md.
-func (ph *Argon2IDPasswordHasher) Hash(password string) string {
-	salt := make([]byte, ph.saltLen)
+func HashPasswordArgon2ID(password string, params *Argon2IDParams) (string, error) {
+	salt := make([]byte, params.SaltLen)
 	_, err := rand.Read(salt)
 	if err != nil {
-		panic(err)
+		return "", err
 	}
-
-	hash := argon2.IDKey([]byte(password), salt, ph.time, ph.memory, ph.parallelism, ph.hashLen)
-
-	saltB64 := base64.RawStdEncoding.EncodeToString(salt)
-	hashB64 := base64.RawStdEncoding.EncodeToString(hash)
-	encoded := fmt.Sprintf(
-		"$argon2id$v=%d$t=%d,m=%d,p=%d$%s$%s",
-		argon2.Version,
-		ph.time,
-		ph.memory,
-		ph.parallelism,
-		saltB64,
-		hashB64,
+	hashRaw := argon2.IDKey(
+		[]byte(password),
+		salt,
+		params.Time,
+		params.Memory,
+		params.Parallelism,
+		params.HashLen,
 	)
-
-	return encoded
+	hashEnc := FormatPasswordHashArgon2ID(hashRaw, salt, params)
+	return hashEnc, nil
 }
 
-func (ph *Argon2IDPasswordHasher) Verify(password, hash string) error {
-	newHash := ph.Hash(password)
-	if subtle.ConstantTimeCompare([]byte(newHash), []byte(hash)) == 1 {
+// VerifyPasswordArgon2ID checks that the password matches
+// the Argon2ID hash provided in the PHC string format.
+func VerifyPasswordArgon2ID(password, passwordHash string) error {
+	wantHash, salt, params, err := ParsePasswordHashArgon2ID(passwordHash)
+	if err != nil {
+		return err
+	}
+	gotHash := argon2.IDKey(
+		[]byte(password),
+		salt,
+		params.Time,
+		params.Memory,
+		params.Parallelism,
+		params.HashLen,
+	)
+	if subtle.ConstantTimeCompare(gotHash, wantHash) == 1 {
 		return nil
 	}
 	return ErrPasswordNotMatch
+}
+
+func ParsePasswordHashArgon2ID(passwordHash string) (hash []byte, salt []byte, params *Argon2IDParams, err error) {
+	sr := strings.NewReader(passwordHash)
+
+	var (
+		id      string
+		version int
+		m       uint32
+		t       uint32
+		p       uint8
+		saltB64 string
+		hashB64 string
+	)
+	_, err = fmt.Fscanf(sr, "$%s$v=%d$m=%d,t=%d,p=%d$%s$%s", &id, &version, &m, &t, &p, &saltB64, &hashB64)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if sr.Len() != 0 {
+		return nil, nil, nil, errors.New("extra string")
+	}
+
+	if id != "argon2id" || version != argon2.Version {
+		return nil, nil, nil, errors.New("unsupported id or version")
+	}
+
+	salt, err = base64.RawStdEncoding.DecodeString(saltB64)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	saltLen, err := intToUint32(len(salt))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	hash, err = base64.RawStdEncoding.DecodeString(hashB64)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	hashLen, err := intToUint32(len(hash))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	params = &Argon2IDParams{
+		Memory:      m,
+		Time:        t,
+		Parallelism: p,
+		SaltLen:     saltLen,
+		HashLen:     hashLen,
+	}
+
+	return hash, salt, params, nil
+}
+
+func FormatPasswordHashArgon2ID(hash []byte, salt []byte, params *Argon2IDParams) string {
+	saltB64 := base64.RawStdEncoding.EncodeToString(salt)
+	hashB64 := base64.RawStdEncoding.EncodeToString(hash)
+
+	return fmt.Sprintf(
+		"$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
+		argon2.Version,
+		params.Memory,
+		params.Time,
+		params.Parallelism,
+		saltB64,
+		hashB64,
+	)
+}
+
+func intToUint32(i int) (uint32, error) {
+	if i < 0 || i > math.MaxUint32 {
+		return 0, errors.New("int out of uint32 bounds")
+	}
+	return uint32(i), nil
 }
