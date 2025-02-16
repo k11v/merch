@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS transactions (
     FOREIGN KEY (from_user_id) REFERENCES users (id),
     FOREIGN KEY (to_user_id) REFERENCES users (id)
 );
+CREATE INDEX IF NOT EXISTS transactions_from_user_id_idx ON transactions (from_user_id);
+CREATE INDEX IF NOT EXISTS transactions_to_user_id_idx ON transactions (to_user_id);
 
 CREATE TABLE IF NOT EXISTS items (
     id uuid NOT NULL DEFAULT uuid_generate_v4(),
