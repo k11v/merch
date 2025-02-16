@@ -29,6 +29,10 @@ ENV PATH="/opt/app/bin:$PATH"
 RUN mkdir /opt/app
 COPY --from=builder /opt/app/bin /opt/app/bin
 
+RUN mkdir /user/jwt-data \
+ && chown 2000:2000 /user/jwt-data
+VOLUME /user/jwt-data
+
 USER user:user
 WORKDIR /user
 ENTRYPOINT []
