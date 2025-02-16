@@ -242,6 +242,14 @@ func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 	return merch.PostAPIAuth200JSONResponse{Token: &tokenString}, nil
 }
 
+type Auth struct{}
+
+type Authenticator struct{}
+
+func (a *Authenticator) AuthenticateWithUsernamePassword(username, password string) (*Auth, error) {
+	return nil, nil
+}
+
 // GetAPIBuyItem implements merch.StrictServerInterface.
 func (h *Handler) GetAPIBuyItem(ctx context.Context, request merch.GetAPIBuyItemRequestObject) (merch.GetAPIBuyItemResponseObject, error) {
 	userID, ok := ctx.Value(ContextValueUserID).(uuid.UUID)
