@@ -137,7 +137,7 @@ func newHTTPServer(db *pgxpool.Pool, host string, port int, jwtVerificationKey e
 	})
 
 	middlewares := []func(next http.Handler) http.Handler{
-		Authenticator(jwtVerificationKey),
+		Authentication(jwtVerificationKey),
 	}
 	for _, m := range middlewares {
 		h = m(h)
@@ -902,7 +902,7 @@ func serveResponseError(w http.ResponseWriter, r *http.Request, err error) {
 	_ = json.NewEncoder(w).Encode(response)
 }
 
-func Authenticator(jwtVerificationKey ed25519.PublicKey) func(next http.Handler) http.Handler {
+func Authentication(jwtVerificationKey ed25519.PublicKey) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch {
