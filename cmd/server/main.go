@@ -914,7 +914,7 @@ func Authenticator(jwtVerificationKey ed25519.PublicKey) func(next http.Handler)
 					errors := fmt.Sprintf("empty %s header", headerAuthorization)
 					response := merch.ErrorResponse{Errors: &errors}
 					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusBadRequest)
+					w.WriteHeader(http.StatusUnauthorized)
 					err := json.NewEncoder(w).Encode(response)
 					if err != nil {
 						serveResponseError(w, r, err)
@@ -928,7 +928,7 @@ func Authenticator(jwtVerificationKey ed25519.PublicKey) func(next http.Handler)
 					errors := fmt.Sprintf("invalid %s header scheme", headerAuthorization)
 					response := merch.ErrorResponse{Errors: &errors}
 					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusBadRequest)
+					w.WriteHeader(http.StatusUnauthorized)
 					err := json.NewEncoder(w).Encode(response)
 					if err != nil {
 						serveResponseError(w, r, err)
