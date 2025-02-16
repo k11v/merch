@@ -2,6 +2,7 @@ FROM golang:1.23-alpine AS builder
 
 USER root:root
 WORKDIR /opt/app/src
+COPY ./api ./api
 COPY ./cmd ./cmd
 COPY ./internal ./internal
 COPY ./go.mod ./go.mod
