@@ -435,15 +435,12 @@ func (h *Handler) PostAPISendCoin(ctx context.Context, request merch.PostAPISend
 		}
 	}()
 
-	fromUser, err := getUserForUpdate(ctx, tx, fromUserID)
+	usersMap, err := getUsersByIDsForUpdate(ctx, tx, fromUserID, toUserID)
 	if err != nil {
 		return nil, err
 	}
-
-	toUser, err = getUserForUpdate(ctx, tx, toUserID)
-	if err != nil {
-		return nil, err
-	}
+	fromUser := usersMap[fromUserID]
+	toUser = usersMap[toUserID]
 
 	fromUserBalance := fromUser.Balance
 	fromUserBalance -= amount
@@ -769,6 +766,36 @@ func getUserForUpdate(ctx context.Context, db pgxExecutor, id uuid.UUID) (*User,
 	}
 
 	return user, nil
+}
+
+func getUsersByIDsForUpdate(ctx context.Context, db pgxExecutor, ids ...uuid.UUID) (map[uuid.UUID]*User, error) {
+	query := `
+		SELECT id, username, password_hash, balance
+		FROM users
+		WHERE id = ANY($1)
+		FOR UPDATE
+	`
+	args := []any{ids}
+
+	rows, _ := db.Query(ctx, query, args...)
+	users, err := pgx.CollectRows(rows, rowToUser)
+	if err != nil {
+		return nil, err
+	}
+
+	usersMap := make(map[uuid.UUID]*User)
+	for _, u := range users {
+		usersMap[u.ID] = u
+	}
+
+	for _, id := range ids {
+		_, ok := usersMap[id]
+		if !ok {
+			return nil, ErrUserNotExist
+		}
+	}
+
+	return usersMap, nil
 }
 
 func updateUserBalance(ctx context.Context, db pgxExecutor, id uuid.UUID, balance int) (*User, error) {
