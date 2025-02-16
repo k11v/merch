@@ -164,152 +164,6 @@ func NewHandler(db *pgxpool.Pool, jwtSignatureKey ed25519.PrivateKey) *Handler {
 	return &Handler{db: db, jwtSignatureKey: jwtSignatureKey}
 }
 
-// GetAPIBuyItem implements merch.StrictServerInterface.
-func (h *Handler) GetAPIBuyItem(ctx context.Context, request merch.GetAPIBuyItemRequestObject) (merch.GetAPIBuyItemResponseObject, error) {
-	userID, ok := ctx.Value(ContextValueUserID).(uuid.UUID)
-	if !ok {
-		panic(fmt.Errorf("can't get %s context value", ContextValueUserID))
-	}
-
-	itemName := request.Item
-	if itemName == "" {
-		errors := "empty item"
-		return merch.GetAPIBuyItem400JSONResponse{Errors: &errors}, nil
-	}
-
-	item, err := getItemByName(ctx, h.db, itemName)
-	if err != nil {
-		if errors.Is(err, ErrItemNotExist) {
-			errors := "item does not exist"
-			return merch.GetAPIBuyItem400JSONResponse{Errors: &errors}, nil
-		}
-		return nil, err
-	}
-
-	tx, err := h.db.Begin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		err = tx.Rollback(ctx)
-		if err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-			slog.Error("didn't rollback", "err", err)
-		}
-	}()
-
-	user, err := getUserForUpdate(ctx, tx, userID)
-	if err != nil {
-		return nil, err
-	}
-
-	balance := user.Balance
-	balance -= item.Price
-	if balance < 0 {
-		errors := "not enough coins"
-		return merch.GetAPIBuyItem400JSONResponse{Errors: &errors}, nil
-	}
-
-	_, err = updateUserBalance(ctx, tx, userID, balance)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = createTransaction(ctx, tx, &userID, nil, item.Price)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = addUserItemAmount(ctx, tx, userID, item.ID, 1)
-	if err != nil {
-		return nil, err
-	}
-
-	err = tx.Commit(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return merch.GetAPIBuyItem200Response{}, nil
-}
-
-// GetAPIInfo implements merch.StrictServerInterface.
-func (h *Handler) GetAPIInfo(ctx context.Context, request merch.GetAPIInfoRequestObject) (merch.GetAPIInfoResponseObject, error) {
-	userID, ok := ctx.Value(ContextValueUserID).(uuid.UUID)
-	if !ok {
-		panic(fmt.Errorf("can't get %s context value", ContextValueUserID))
-	}
-
-	user, err := getUser(ctx, h.db, userID)
-	if err != nil {
-		return nil, err
-	}
-	transactions, err := getTransactionsByUserID(ctx, h.db, userID)
-	if err != nil {
-		return nil, err
-	}
-	userItems, err := getUserItems(ctx, h.db, userID)
-	if err != nil {
-		return nil, err
-	}
-
-	coins := user.Balance
-
-	type receivedHistoryItem = struct {
-		Amount   *int    `json:"amount,omitempty"`
-		FromUser *string `json:"fromUser,omitempty"`
-	}
-	type sentHistoryItem = struct {
-		Amount *int    `json:"amount,omitempty"`
-		ToUser *string `json:"toUser,omitempty"`
-	}
-	type history = struct {
-		Received *[]receivedHistoryItem `json:"received,omitempty"`
-		Sent     *[]sentHistoryItem     `json:"sent,omitempty"`
-	}
-	received := make([]receivedHistoryItem, 0)
-	sent := make([]sentHistoryItem, 0)
-	for _, transaction := range transactions {
-		fromUserID := transaction.FromUserID
-		toUserID := transaction.ToUserID
-		if fromUserID == nil || toUserID == nil {
-			continue
-		}
-		if *fromUserID == userID {
-			sent = append(sent, sentHistoryItem{
-				Amount: &transaction.Amount,
-				ToUser: transaction.ToUsername,
-			})
-		}
-		if *toUserID == userID {
-			received = append(received, receivedHistoryItem{
-				Amount:   &transaction.Amount,
-				FromUser: transaction.FromUsername,
-			})
-		}
-	}
-
-	type inventoryItem = struct {
-		Quantity *int    `json:"quantity,omitempty"`
-		Type     *string `json:"type,omitempty"`
-	}
-	inventory := make([]inventoryItem, len(userItems))
-	for i, userItem := range userItems {
-		inventory[i] = inventoryItem{
-			Quantity: &userItem.Amount,
-			Type:     &userItem.ItemName,
-		}
-	}
-
-	return merch.GetAPIInfo200JSONResponse{
-		CoinHistory: &history{
-			Received: &received,
-			Sent:     &sent,
-		},
-		Coins:     &coins,
-		Inventory: &inventory,
-	}, nil
-}
-
 // PostAPIAuth implements merch.StrictServerInterface.
 func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequestObject) (merch.PostAPIAuthResponseObject, error) {
 	if request.Body.Username == "" {
@@ -386,6 +240,74 @@ func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 	}
 
 	return merch.PostAPIAuth200JSONResponse{Token: &tokenString}, nil
+}
+
+// GetAPIBuyItem implements merch.StrictServerInterface.
+func (h *Handler) GetAPIBuyItem(ctx context.Context, request merch.GetAPIBuyItemRequestObject) (merch.GetAPIBuyItemResponseObject, error) {
+	userID, ok := ctx.Value(ContextValueUserID).(uuid.UUID)
+	if !ok {
+		panic(fmt.Errorf("can't get %s context value", ContextValueUserID))
+	}
+
+	itemName := request.Item
+	if itemName == "" {
+		errors := "empty item"
+		return merch.GetAPIBuyItem400JSONResponse{Errors: &errors}, nil
+	}
+
+	item, err := getItemByName(ctx, h.db, itemName)
+	if err != nil {
+		if errors.Is(err, ErrItemNotExist) {
+			errors := "item does not exist"
+			return merch.GetAPIBuyItem400JSONResponse{Errors: &errors}, nil
+		}
+		return nil, err
+	}
+
+	tx, err := h.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		err = tx.Rollback(ctx)
+		if err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			slog.Error("didn't rollback", "err", err)
+		}
+	}()
+
+	user, err := getUserForUpdate(ctx, tx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	balance := user.Balance
+	balance -= item.Price
+	if balance < 0 {
+		errors := "not enough coins"
+		return merch.GetAPIBuyItem400JSONResponse{Errors: &errors}, nil
+	}
+
+	_, err = updateUserBalance(ctx, tx, userID, balance)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = createTransaction(ctx, tx, &userID, nil, item.Price)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = addUserItemAmount(ctx, tx, userID, item.ID, 1)
+	if err != nil {
+		return nil, err
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return merch.GetAPIBuyItem200Response{}, nil
 }
 
 // PostAPISendCoin implements merch.StrictServerInterface.
@@ -473,6 +395,84 @@ func (h *Handler) PostAPISendCoin(ctx context.Context, request merch.PostAPISend
 	}
 
 	return merch.PostAPISendCoin200Response{}, nil
+}
+
+// GetAPIInfo implements merch.StrictServerInterface.
+func (h *Handler) GetAPIInfo(ctx context.Context, request merch.GetAPIInfoRequestObject) (merch.GetAPIInfoResponseObject, error) {
+	userID, ok := ctx.Value(ContextValueUserID).(uuid.UUID)
+	if !ok {
+		panic(fmt.Errorf("can't get %s context value", ContextValueUserID))
+	}
+
+	user, err := getUser(ctx, h.db, userID)
+	if err != nil {
+		return nil, err
+	}
+	transactions, err := getTransactionsByUserID(ctx, h.db, userID)
+	if err != nil {
+		return nil, err
+	}
+	userItems, err := getUserItems(ctx, h.db, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	coins := user.Balance
+
+	type receivedHistoryItem = struct {
+		Amount   *int    `json:"amount,omitempty"`
+		FromUser *string `json:"fromUser,omitempty"`
+	}
+	type sentHistoryItem = struct {
+		Amount *int    `json:"amount,omitempty"`
+		ToUser *string `json:"toUser,omitempty"`
+	}
+	type history = struct {
+		Received *[]receivedHistoryItem `json:"received,omitempty"`
+		Sent     *[]sentHistoryItem     `json:"sent,omitempty"`
+	}
+	received := make([]receivedHistoryItem, 0)
+	sent := make([]sentHistoryItem, 0)
+	for _, transaction := range transactions {
+		fromUserID := transaction.FromUserID
+		toUserID := transaction.ToUserID
+		if fromUserID == nil || toUserID == nil {
+			continue
+		}
+		if *fromUserID == userID {
+			sent = append(sent, sentHistoryItem{
+				Amount: &transaction.Amount,
+				ToUser: transaction.ToUsername,
+			})
+		}
+		if *toUserID == userID {
+			received = append(received, receivedHistoryItem{
+				Amount:   &transaction.Amount,
+				FromUser: transaction.FromUsername,
+			})
+		}
+	}
+
+	type inventoryItem = struct {
+		Quantity *int    `json:"quantity,omitempty"`
+		Type     *string `json:"type,omitempty"`
+	}
+	inventory := make([]inventoryItem, len(userItems))
+	for i, userItem := range userItems {
+		inventory[i] = inventoryItem{
+			Quantity: &userItem.Amount,
+			Type:     &userItem.ItemName,
+		}
+	}
+
+	return merch.GetAPIInfo200JSONResponse{
+		CoinHistory: &history{
+			Received: &received,
+			Sent:     &sent,
+		},
+		Coins:     &coins,
+		Inventory: &inventory,
+	}, nil
 }
 
 type pgxExecutor interface {
