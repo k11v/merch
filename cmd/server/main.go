@@ -1038,20 +1038,20 @@ func parseAndVerifyToken(s string, jwtVerificationKey ed25519.PublicKey) (*Token
 func readFileWithED25519PublicKey(name string) (ed25519.PublicKey, error) {
 	publicKeyPemBytes, err := os.ReadFile(name)
 	if err != nil {
-		return ed25519.PublicKey{}, err
+		return nil, err
 	}
 	publicKeyPemBlock, _ := pem.Decode(publicKeyPemBytes)
 	if publicKeyPemBlock == nil {
-		return ed25519.PublicKey{}, err
+		return nil, err
 	}
 	publicKeyX509Bytes := publicKeyPemBlock.Bytes
 	publicKeyAny, err := x509.ParsePKIXPublicKey(publicKeyX509Bytes)
 	if err != nil {
-		return ed25519.PublicKey{}, err
+		return nil, err
 	}
 	publicKey, ok := publicKeyAny.(ed25519.PublicKey)
 	if !ok {
-		return ed25519.PublicKey{}, errors.New("not an ed25519 public key file")
+		return nil, errors.New("not an ed25519 public key file")
 	}
 	return publicKey, nil
 }
@@ -1059,20 +1059,20 @@ func readFileWithED25519PublicKey(name string) (ed25519.PublicKey, error) {
 func readFileWithED25519PrivateKey(name string) (ed25519.PrivateKey, error) {
 	privateKeyPemBytes, err := os.ReadFile(name)
 	if err != nil {
-		return ed25519.PrivateKey{}, err
+		return nil, err
 	}
 	privateKeyPemBlock, _ := pem.Decode(privateKeyPemBytes)
 	if privateKeyPemBlock == nil {
-		return ed25519.PrivateKey{}, err
+		return nil, err
 	}
 	privateKeyX509Bytes := privateKeyPemBlock.Bytes
 	privateKeyAny, err := x509.ParsePKCS8PrivateKey(privateKeyX509Bytes)
 	if err != nil {
-		return ed25519.PrivateKey{}, err
+		return nil, err
 	}
 	privateKey, ok := privateKeyAny.(ed25519.PrivateKey)
 	if !ok {
-		return ed25519.PrivateKey{}, errors.New("not an ed25519 private key file")
+		return nil, errors.New("not an ed25519 private key file")
 	}
 	return privateKey, nil
 }
