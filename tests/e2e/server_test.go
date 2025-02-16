@@ -11,9 +11,12 @@ import (
 
 func TestServer(t *testing.T) {
 	t.Run("allows to buy an item", func(t *testing.T) {
-		ctx := context.TODO()
-		client := newTestClient(t)
+		var (
+			ctx    = context.TODO()
+			client = newTestClient(t)
+		)
 
+		// Authenticate.
 		authResp, err := client.PostAPIAuthWithResponse(ctx, merch.PostAPIAuthJSONRequestBody{
 			Username: "testuser",
 			Password: "testpassword",
@@ -26,6 +29,7 @@ func TestServer(t *testing.T) {
 		}
 		token := *authResp.JSON200.Token
 
+		// Buy an item.
 		buyResp, err := client.GetAPIBuyItemWithResponse(ctx, "t-shirt", authorization(token))
 		if err != nil {
 			t.Fatalf("GetAPIBuyItemWithResponse: %v", err)
@@ -37,6 +41,7 @@ func TestServer(t *testing.T) {
 			t.Fatalf("GetAPIBuyItemWithResponse: got non-empty body")
 		}
 
+		// Check that the item is owned.
 		infoResp, err := client.GetAPIInfoWithResponse(ctx, authorization(token))
 		if err != nil {
 			t.Fatalf("GetAPIInfoWithResponse: %v", err)
@@ -56,9 +61,12 @@ func TestServer(t *testing.T) {
 	})
 
 	t.Run("allows to send coins", func(t *testing.T) {
-		ctx := context.TODO()
-		client := newTestClient(t)
+		var (
+			ctx    = context.TODO()
+			client = newTestClient(t)
+		)
 
+		// Authenticate as user 1.
 		auth1Resp, err := client.PostAPIAuthWithResponse(ctx, merch.PostAPIAuthJSONRequestBody{
 			Username: "testuser1",
 			Password: "testpassword1",
@@ -69,11 +77,9 @@ func TestServer(t *testing.T) {
 		if auth1Resp.JSON200 == nil {
 			t.Fatalf("PostAPIAuthWithResponse: body is not JSON200")
 		}
-		if auth1Resp.JSON200.Token == nil {
-			t.Fatalf("PostAPIAuthWithResponse: missing token body value")
-		}
 		token1 := *auth1Resp.JSON200.Token
 
+		// Authenticate as user 2.
 		auth2Resp, err := client.PostAPIAuthWithResponse(ctx, merch.PostAPIAuthJSONRequestBody{
 			Username: "testuser2",
 			Password: "testpassword2",
@@ -84,11 +90,9 @@ func TestServer(t *testing.T) {
 		if auth2Resp.JSON200 == nil {
 			t.Fatalf("PostAPIAuthWithResponse: body is not JSON200")
 		}
-		if auth2Resp.JSON200.Token == nil {
-			t.Fatalf("PostAPIAuthWithResponse: missing token body value")
-		}
 		token2 := *auth2Resp.JSON200.Token
 
+		// Send coins from user 1 to user 2.
 		sendResp, err := client.PostAPISendCoinWithResponse(
 			ctx,
 			merch.PostAPISendCoinJSONRequestBody{
@@ -107,6 +111,10 @@ func TestServer(t *testing.T) {
 			t.Fatalf("PostAPISendCoinWithResponse: got non-empty body")
 		}
 
+		// Check that user 1 has transaction in sent coin history,
+		// user 2 has transaction in received coin history,
+		// user 1 doesn't have the sent coins on the balance,
+		// user 2 does have the received coins on the balance.
 		info1Resp, err := client.GetAPIInfoWithResponse(ctx, authorization(token1))
 		if err != nil {
 			t.Fatalf("GetAPIInfoWithResponse: %v", err)
