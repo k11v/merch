@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/k11v/merch/api/merch"
 )
@@ -50,19 +51,55 @@ func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 	}
 	password := request.Body.Password
 
+	authenticator := NewAuthenticator(h.db, h.jwtSignatureKey)
+	authData, err := authenticator.AuthenticateWithUsernameAndPassword(ctx, username, password)
+	if err != nil {
+		if errors.Is(err, ErrInvalidPassword) {
+			errors := "invalid username or password"
+			return merch.PostAPIAuth401JSONResponse{Errors: &errors}, nil
+		}
+		return nil, err
+	}
+
+	token := Token{
+		UserID:    authData.UserID,
+		ExpiresAt: time.Now().Add(time.Hour),
+		IssuedAt:  time.Now(),
+		ID:        uuid.New(),
+	}
+	tokenString, err := formatAndSignToken(&token, h.jwtSignatureKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return merch.PostAPIAuth200JSONResponse{Token: &tokenString}, nil
+}
+
+var ErrInvalidPassword = errors.New("invalid password")
+
+type AuthData struct {
+	UserID uuid.UUID
+}
+
+type Authenticator struct {
+	db              *pgxpool.Pool
+	jwtSignatureKey ed25519.PrivateKey
+}
+
+func NewAuthenticator(db *pgxpool.Pool, jwtSignatureKey ed25519.PrivateKey) *Authenticator {
+	return &Authenticator{db: db, jwtSignatureKey: jwtSignatureKey}
+}
+
+func (a *Authenticator) AuthenticateWithUsernameAndPassword(ctx context.Context, username, password string) (*AuthData, error) {
 	// HACK: Race condition.
-	user, err := getUserByUsername(ctx, h.db, username)
+	user, err := getUserByUsername(ctx, a.db, username)
 	if err == nil {
 		err = VerifyPasswordArgon2ID(password, user.PasswordHash)
 		if err != nil {
-			if errors.Is(err, ErrPasswordNotMatch) {
-				errors := "invalid password"
-				return merch.PostAPIAuth401JSONResponse{Errors: &errors}, nil
-			}
 			return nil, err
 		}
 	} else if errors.Is(err, ErrUserNotExist) {
-		tx, err := h.db.Begin(ctx)
+		tx, err := a.db.Begin(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -99,33 +136,11 @@ func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 	} else {
 		return nil, err
 	}
-
-	token := Token{
-		UserID:    user.ID,
-		ExpiresAt: time.Now().Add(time.Hour),
-		IssuedAt:  time.Now(),
-		ID:        uuid.New(),
-	}
-	tokenString, err := formatAndSignToken(&token, h.jwtSignatureKey)
-	if err != nil {
-		return nil, err
-	}
-
-	return merch.PostAPIAuth200JSONResponse{Token: &tokenString}, nil
+	return &AuthData{UserID: user.ID}, nil
 }
 
-type Auth struct {
-	UserID uuid.UUID
-}
-
-type Authenticator struct{}
-
-func (a *Authenticator) AuthenticateWithUsernamePassword(username, password string) (*Auth, error) {
-	return &Auth{}, nil
-}
-
-func (a *Authenticator) AuthenticateWithToken(token string) (*Auth, error) {
-	return &Auth{}, nil
+func (a *Authenticator) AuthenticateWithToken(token string) (*AuthData, error) {
+	return &AuthData{}, nil
 }
 
 type TokenIssuer struct{}

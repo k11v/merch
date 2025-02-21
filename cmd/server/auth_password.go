@@ -70,7 +70,7 @@ func VerifyPasswordArgon2ID(password, passwordHash string) error {
 	if subtle.ConstantTimeCompare(gotHash, wantHash) == 1 {
 		return nil
 	}
-	return fmt.Errorf("VerifyPasswordArgon2ID: %w", ErrPasswordNotMatch)
+	return fmt.Errorf("VerifyPasswordArgon2ID: %w", ErrInvalidPassword)
 }
 
 func parsePasswordHashArgon2ID(passwordHash string) (hash []byte, salt []byte, params *Argon2IDParams, err error) {
