@@ -114,6 +114,20 @@ func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 	return merch.PostAPIAuth200JSONResponse{Token: &tokenString}, nil
 }
 
+type Auth struct {
+	UserID uuid.UUID
+}
+
+type Authenticator struct{}
+
+func (a *Authenticator) AuthenticateWithUsernamePassword(username, password string) (*Auth, error) {
+	return &Auth{}, nil
+}
+
+func (a *Authenticator) AuthenticateWithToken(token string) (*Auth, error) {
+	return &Auth{}, nil
+}
+
 func Authentication(jwtVerificationKey ed25519.PublicKey) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
