@@ -10,6 +10,12 @@ import (
 	"github.com/google/uuid"
 )
 
+type TokenIssuer struct{}
+
+func (ti *TokenIssuer) Issue(userID uuid.UUID) (string, error) {
+	return "", nil
+}
+
 type Token struct {
 	UserID    uuid.UUID
 	ExpiresAt time.Time
