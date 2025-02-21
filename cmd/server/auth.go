@@ -38,23 +38,23 @@ type User struct {
 
 // PostAPIAuth implements merch.StrictServerInterface.
 func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequestObject) (merch.PostAPIAuthResponseObject, error) {
-	if request.Body.Username == "" {
+	username := request.Body.Username
+	if username == "" {
 		errors := "empty username"
 		return merch.PostAPIAuth400JSONResponse{Errors: &errors}, nil
 	}
-	username := request.Body.Username
 
-	if request.Body.Password == "" {
+	password := request.Body.Password
+	if password == "" {
 		errors := "empty password"
 		return merch.PostAPIAuth400JSONResponse{Errors: &errors}, nil
 	}
-	password := request.Body.Password
 
 	passwordHasher := NewPasswordHasher(DefaultArgon2IDParams())
 	passwordAuthenticator := NewPasswordAuthenticator(h.db, passwordHasher)
 	authData, err := passwordAuthenticator.AuthenticatePassword(ctx, username, password)
 	if err != nil {
-		if errors.Is(err, ErrInvalidPassword) {
+		if errors.Is(err, ErrInvalidUsernameOrPassword) {
 			errors := "invalid username or password"
 			return merch.PostAPIAuth401JSONResponse{Errors: &errors}, nil
 		}
@@ -70,7 +70,7 @@ func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 	return merch.PostAPIAuth200JSONResponse{Token: &token}, nil
 }
 
-var ErrInvalidPassword = errors.New("invalid password")
+var ErrInvalidUsernameOrPassword = errors.New("invalid username or password")
 
 type AuthData struct {
 	UserID uuid.UUID

@@ -78,7 +78,7 @@ func (ph *PasswordHasher) Verify(password, passwordHash string) error {
 	if subtle.ConstantTimeCompare(gotHash, wantHash) == 1 {
 		return nil
 	}
-	return fmt.Errorf("VerifyPasswordArgon2ID: %w", ErrInvalidPassword)
+	return fmt.Errorf("VerifyPasswordArgon2ID: %w", ErrInvalidUsernameOrPassword)
 }
 
 func parsePasswordHashArgon2ID(passwordHash string) (hash []byte, salt []byte, params *Argon2IDParams, err error) {
