@@ -31,11 +31,19 @@ func DefaultArgon2IDParams() *Argon2IDParams {
 	}
 }
 
-// HashPasswordArgon2ID derives an Argon2ID hash from the password
+type PasswordHasher struct {
+	argon2IDParams *Argon2IDParams
+}
+
+func NewPasswordHasher(argon2IDParams *Argon2IDParams) *PasswordHasher {
+	return &PasswordHasher{argon2IDParams: argon2IDParams}
+}
+
+// Hash derives an Argon2ID hash from the password
 // and returns it in the PHC string format.
 // See https://github.com/P-H-C/phc-string-format/blob/master/phc-sf-spec.md.
-func HashPasswordArgon2ID(password string, params *Argon2IDParams) (string, error) {
-	salt := make([]byte, params.SaltLen)
+func (ph *PasswordHasher) Hash(password string) (string, error) {
+	salt := make([]byte, ph.argon2IDParams.SaltLen)
 	_, err := rand.Read(salt)
 	if err != nil {
 		return "", fmt.Errorf("HashPasswordArgon2ID: %w", err)
@@ -43,18 +51,18 @@ func HashPasswordArgon2ID(password string, params *Argon2IDParams) (string, erro
 	hashRaw := argon2.IDKey(
 		[]byte(password),
 		salt,
-		params.Time,
-		params.Memory,
-		params.Parallelism,
-		params.HashLen,
+		ph.argon2IDParams.Time,
+		ph.argon2IDParams.Memory,
+		ph.argon2IDParams.Parallelism,
+		ph.argon2IDParams.HashLen,
 	)
-	hashEnc := formatPasswordHashArgon2ID(hashRaw, salt, params)
+	hashEnc := formatPasswordHashArgon2ID(hashRaw, salt, ph.argon2IDParams)
 	return hashEnc, nil
 }
 
-// VerifyPasswordArgon2ID checks that the password matches
-// the Argon2ID hash provided in the PHC string format.
-func VerifyPasswordArgon2ID(password, passwordHash string) error {
+// Verify checks that the password matches the Argon2ID hash
+// provided in the PHC string format.
+func (ph *PasswordHasher) Verify(password, passwordHash string) error {
 	wantHash, salt, params, err := parsePasswordHashArgon2ID(passwordHash)
 	if err != nil {
 		return fmt.Errorf("VerifyPasswordArgon2ID: %w", err)

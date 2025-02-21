@@ -50,8 +50,9 @@ func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 	}
 	password := request.Body.Password
 
-	authenticator := NewPasswordAuthenticator(h.db)
-	authData, err := authenticator.AuthenticatePassword(ctx, username, password)
+	passwordHasher := NewPasswordHasher(DefaultArgon2IDParams())
+	passwordAuthenticator := NewPasswordAuthenticator(h.db, passwordHasher)
+	authData, err := passwordAuthenticator.AuthenticatePassword(ctx, username, password)
 	if err != nil {
 		if errors.Is(err, ErrInvalidPassword) {
 			errors := "invalid username or password"
@@ -76,23 +77,24 @@ type AuthData struct {
 }
 
 type PasswordAuthenticator struct {
-	db *pgxpool.Pool
+	db             *pgxpool.Pool
+	passwordHasher *PasswordHasher
 }
 
-func NewPasswordAuthenticator(db *pgxpool.Pool) *PasswordAuthenticator {
-	return &PasswordAuthenticator{db: db}
+func NewPasswordAuthenticator(db *pgxpool.Pool, passwordHasher *PasswordHasher) *PasswordAuthenticator {
+	return &PasswordAuthenticator{db: db, passwordHasher: passwordHasher}
 }
 
-func (a *PasswordAuthenticator) AuthenticatePassword(ctx context.Context, username, password string) (*AuthData, error) {
+func (pa *PasswordAuthenticator) AuthenticatePassword(ctx context.Context, username, password string) (*AuthData, error) {
 	// HACK: Race condition.
-	user, err := getUserByUsername(ctx, a.db, username)
+	user, err := getUserByUsername(ctx, pa.db, username)
 	if err == nil {
-		err = VerifyPasswordArgon2ID(password, user.PasswordHash)
+		err = pa.passwordHasher.Verify(password, user.PasswordHash)
 		if err != nil {
 			return nil, err
 		}
 	} else if errors.Is(err, ErrUserNotExist) {
-		tx, err := a.db.Begin(ctx)
+		tx, err := pa.db.Begin(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -104,7 +106,7 @@ func (a *PasswordAuthenticator) AuthenticatePassword(ctx context.Context, userna
 		}()
 
 		initialBalance := 1000
-		passwordHash, err := HashPasswordArgon2ID(password, DefaultArgon2IDParams())
+		passwordHash, err := pa.passwordHasher.Hash(password)
 		if err != nil {
 			return nil, err
 		}
@@ -130,16 +132,6 @@ func (a *PasswordAuthenticator) AuthenticatePassword(ctx context.Context, userna
 		return nil, err
 	}
 	return &AuthData{UserID: user.ID}, nil
-}
-
-type PasswordHasher struct{}
-
-func (ph *PasswordHasher) Hash(password string) (string, error) {
-	return "", nil
-}
-
-func (ph *PasswordHasher) Verify(password, passwordHash string) error {
-	return nil
 }
 
 func Authentication(jwtVerificationKey ed25519.PublicKey) func(next http.Handler) http.Handler {
