@@ -128,6 +128,12 @@ func (a *Authenticator) AuthenticateWithToken(token string) (*Auth, error) {
 	return &Auth{}, nil
 }
 
+type TokenIssuer struct{}
+
+func (ti *TokenIssuer) Issue(userID uuid.UUID) (string, error) {
+	return "", nil
+}
+
 func Authentication(jwtVerificationKey ed25519.PublicKey) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
