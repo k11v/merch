@@ -19,7 +19,22 @@ func NewTokenIssuer(jwtSignatureKey ed25519.PrivateKey) *TokenIssuer {
 }
 
 func (ti *TokenIssuer) Issue(userID uuid.UUID) (string, error) {
-	return "", nil
+	id := uuid.New()
+	issuedAt := time.Now()
+	expiresAt := issuedAt.Add(time.Hour)
+	claims := jwt.RegisteredClaims{
+		Subject:   userID.String(),
+		ExpiresAt: jwt.NewNumericDate(expiresAt),
+		IssuedAt:  jwt.NewNumericDate(issuedAt),
+		ID:        id.String(),
+	}
+
+	unsigned := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	signed, err := unsigned.SignedString(ti.jwtSignatureKey)
+	if err != nil {
+		return "", fmt.Errorf("TokenIssuer: %w", err)
+	}
+	return signed, err
 }
 
 type Token struct {
