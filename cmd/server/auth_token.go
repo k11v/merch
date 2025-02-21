@@ -30,7 +30,7 @@ func NewTokenIssuer(jwtSignatureKey ed25519.PrivateKey) *TokenIssuer {
 	return &TokenIssuer{jwtSignatureKey: jwtSignatureKey}
 }
 
-func (ti *TokenIssuer) Issue(userID uuid.UUID) (string, error) {
+func (ti *TokenIssuer) IssueToken(userID uuid.UUID) (string, error) {
 	id := uuid.New()
 	issuedAt := time.Now()
 	expiresAt := issuedAt.Add(time.Hour)
