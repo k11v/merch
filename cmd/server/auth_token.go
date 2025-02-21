@@ -18,7 +18,7 @@ func NewTokenAuthenticator(jwtVerificationKey ed25519.PublicKey) *TokenAuthentic
 	return &TokenAuthenticator{jwtVerificationKey: jwtVerificationKey}
 }
 
-func (ta *TokenAuthenticator) AuthenticateWithToken(token string) (*AuthData, error) {
+func (ta *TokenAuthenticator) AuthenticateToken(token string) (*AuthData, error) {
 	return &AuthData{}, nil
 }
 
