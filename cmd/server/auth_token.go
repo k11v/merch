@@ -10,6 +10,18 @@ import (
 	"github.com/google/uuid"
 )
 
+type TokenAuthenticator struct {
+	jwtVerificationKey ed25519.PublicKey
+}
+
+func NewTokenAuthenticator(jwtVerificationKey ed25519.PublicKey) *TokenAuthenticator {
+	return &TokenAuthenticator{jwtVerificationKey: jwtVerificationKey}
+}
+
+func (ta *TokenAuthenticator) AuthenticateWithToken(token string) (*AuthData, error) {
+	return &AuthData{}, nil
+}
+
 type TokenIssuer struct {
 	jwtSignatureKey ed25519.PrivateKey
 }
