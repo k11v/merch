@@ -10,7 +10,13 @@ import (
 	"github.com/google/uuid"
 )
 
-type TokenIssuer struct{}
+type TokenIssuer struct {
+	jwtSignatureKey ed25519.PrivateKey
+}
+
+func NewTokenIssuer(jwtSignatureKey ed25519.PrivateKey) *TokenIssuer {
+	return &TokenIssuer{jwtSignatureKey: jwtSignatureKey}
+}
 
 func (ti *TokenIssuer) Issue(userID uuid.UUID) (string, error) {
 	return "", nil
