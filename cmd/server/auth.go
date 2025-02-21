@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgerrcode"
@@ -61,18 +60,13 @@ func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 		return nil, err
 	}
 
-	token := Token{
-		UserID:    authData.UserID,
-		ExpiresAt: time.Now().Add(time.Hour),
-		IssuedAt:  time.Now(),
-		ID:        uuid.New(),
-	}
-	tokenString, err := formatAndSignToken(&token, h.jwtSignatureKey)
+	tokenIssuer := NewTokenIssuer(h.jwtSignatureKey)
+	token, err := tokenIssuer.IssueToken(authData.UserID)
 	if err != nil {
 		return nil, err
 	}
 
-	return merch.PostAPIAuth200JSONResponse{Token: &tokenString}, nil
+	return merch.PostAPIAuth200JSONResponse{Token: &token}, nil
 }
 
 var ErrInvalidPassword = errors.New("invalid password")
@@ -201,7 +195,7 @@ func Authentication(jwtVerificationKey ed25519.PublicKey) func(next http.Handler
 					}
 					return
 				}
-				userID := token.UserID
+				userID := token.userID
 
 				ctx := r.Context()
 				ctx = context.WithValue(ctx, ContextValueUserID, userID)
