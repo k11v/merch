@@ -50,8 +50,8 @@ func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 	}
 	password := request.Body.Password
 
-	authenticator := NewAuthenticator(h.db, h.jwtSignatureKey)
-	authData, err := authenticator.AuthenticateWithUsernameAndPassword(ctx, username, password)
+	authenticator := NewPasswordAuthenticator(h.db)
+	authData, err := authenticator.AuthenticatePassword(ctx, username, password)
 	if err != nil {
 		if errors.Is(err, ErrInvalidPassword) {
 			errors := "invalid username or password"
@@ -75,16 +75,15 @@ type AuthData struct {
 	UserID uuid.UUID
 }
 
-type Authenticator struct {
-	db              *pgxpool.Pool
-	jwtSignatureKey ed25519.PrivateKey
+type PasswordAuthenticator struct {
+	db *pgxpool.Pool
 }
 
-func NewAuthenticator(db *pgxpool.Pool, jwtSignatureKey ed25519.PrivateKey) *Authenticator {
-	return &Authenticator{db: db, jwtSignatureKey: jwtSignatureKey}
+func NewPasswordAuthenticator(db *pgxpool.Pool) *PasswordAuthenticator {
+	return &PasswordAuthenticator{db: db}
 }
 
-func (a *Authenticator) AuthenticateWithUsernameAndPassword(ctx context.Context, username, password string) (*AuthData, error) {
+func (a *PasswordAuthenticator) AuthenticatePassword(ctx context.Context, username, password string) (*AuthData, error) {
 	// HACK: Race condition.
 	user, err := getUserByUsername(ctx, a.db, username)
 	if err == nil {
@@ -133,10 +132,6 @@ func (a *Authenticator) AuthenticateWithUsernameAndPassword(ctx context.Context,
 	return &AuthData{UserID: user.ID}, nil
 }
 
-func (a *Authenticator) AuthenticateWithToken(token string) (*AuthData, error) {
-	return &AuthData{}, nil
-}
-
 type PasswordHasher struct{}
 
 func (ph *PasswordHasher) Hash(password string) (string, error) {
@@ -182,7 +177,8 @@ func Authentication(jwtVerificationKey ed25519.PublicKey) func(next http.Handler
 					return
 				}
 
-				token, err := parseAndVerifyToken(params, jwtVerificationKey)
+				tokenAuthenticator := NewTokenAuthenticator(jwtVerificationKey)
+				authData, err := tokenAuthenticator.AuthenticateToken(params)
 				if err != nil {
 					errors := fmt.Sprintf("%s header: %v", headerAuthorization, err)
 					response := merch.ErrorResponse{Errors: &errors}
@@ -195,7 +191,7 @@ func Authentication(jwtVerificationKey ed25519.PublicKey) func(next http.Handler
 					}
 					return
 				}
-				userID := token.userID
+				userID := authData.UserID
 
 				ctx := r.Context()
 				ctx = context.WithValue(ctx, ContextValueUserID, userID)
