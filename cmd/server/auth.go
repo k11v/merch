@@ -143,12 +143,6 @@ func (a *Authenticator) AuthenticateWithToken(token string) (*AuthData, error) {
 	return &AuthData{}, nil
 }
 
-type TokenIssuer struct{}
-
-func (ti *TokenIssuer) Issue(userID uuid.UUID) (string, error) {
-	return "", nil
-}
-
 type PasswordHasher struct{}
 
 func (ph *PasswordHasher) Hash(password string) (string, error) {
