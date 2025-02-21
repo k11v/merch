@@ -134,6 +134,16 @@ func (ti *TokenIssuer) Issue(userID uuid.UUID) (string, error) {
 	return "", nil
 }
 
+type PasswordHasher struct{}
+
+func (ph *PasswordHasher) Hash(password string) (string, error) {
+	return "", nil
+}
+
+func (ph *PasswordHasher) Verify(password, passwordHash string) error {
+	return nil
+}
+
 func Authentication(jwtVerificationKey ed25519.PublicKey) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
