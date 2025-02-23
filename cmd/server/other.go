@@ -13,7 +13,15 @@ var (
 	ErrPasswordNotMatch = errors.New("password does not match hash")
 	ErrUserExist        = errors.New("user already exists")
 	ErrUserNotExist     = errors.New("user does not exist")
+	ErrItemNotExist     = errors.New("item does not exist")
+	ErrCoinNotEnough    = errors.New("not enough coin")
 )
+
+type Item struct {
+	ID    uuid.UUID
+	Name  string
+	Price int
+}
 
 type User struct {
 	ID           uuid.UUID
@@ -30,6 +38,13 @@ type Transaction struct {
 
 	FromUsername *string
 	ToUsername   *string
+}
+
+type UserItem struct {
+	UserID   uuid.UUID
+	ItemID   uuid.UUID
+	ItemName string
+	Amount   int
 }
 
 type pgxExecutor interface {
@@ -193,5 +208,27 @@ func rowToTransactionWithUsernames(collectable pgx.CollectableRow) (*Transaction
 		Amount:       collected.Amount,
 		FromUsername: collected.FromUsername,
 		ToUsername:   collected.ToUsername,
+	}, nil
+}
+
+func rowToUserItemWithName(collectable pgx.CollectableRow) (*UserItem, error) {
+	type row struct {
+		UserID uuid.UUID `db:"user_id"`
+		ItemID uuid.UUID `db:"item_id"`
+		Amount int       `db:"amount"`
+
+		ItemName string `db:"item_name"`
+	}
+
+	collected, err := pgx.RowToStructByName[row](collectable)
+	if err != nil {
+		return nil, err
+	}
+
+	return &UserItem{
+		UserID:   collected.UserID,
+		ItemID:   collected.ItemID,
+		Amount:   collected.Amount,
+		ItemName: collected.ItemName,
 	}, nil
 }
