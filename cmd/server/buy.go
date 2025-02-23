@@ -13,7 +13,10 @@ import (
 	"github.com/k11v/merch/api/merch"
 )
 
-var ErrItemNotExist = errors.New("item does not exist")
+var (
+	ErrItemNotExist  = errors.New("item does not exist")
+	ErrCoinNotEnough = errors.New("not enough coin")
+)
 
 type Item struct {
 	ID    uuid.UUID
@@ -57,8 +60,6 @@ func (h *Handler) GetAPIBuyItem(ctx context.Context, request merch.GetAPIBuyItem
 
 	return merch.GetAPIBuyItem200Response{}, nil
 }
-
-var ErrCoinNotEnough = errors.New("not enough coin")
 
 type Purchaser struct {
 	db *pgxpool.Pool
