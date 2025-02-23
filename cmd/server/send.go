@@ -43,7 +43,7 @@ func (h *Handler) PostAPISendCoin(ctx context.Context, request merch.PostAPISend
 			errors := "fromUser and toUser are equal"
 			return merch.PostAPISendCoin400JSONResponse{Errors: &errors}, nil
 		}
-		if errors.Is(err, ErrCoinNotEnough) {
+		if errors.Is(err, transfer.ErrCoinNotEnough) {
 			errors := "not enough coins"
 			return merch.PostAPISendCoin400JSONResponse{Errors: &errors}, nil
 		}
