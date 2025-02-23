@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/k11v/merch/api/merch"
 )
@@ -87,6 +88,56 @@ func (h *Handler) GetAPIInfo(ctx context.Context, request merch.GetAPIInfoReques
 		Coins:     &coins,
 		Inventory: &inventory,
 	}, nil
+}
+
+type CoinGetter struct {
+	db *pgxpool.Pool
+}
+
+func NewCoinGetter(db *pgxpool.Pool) *CoinGetter {
+	return &CoinGetter{db: db}
+}
+
+func (g *CoinGetter) GetBalance(ctx context.Context, userID uuid.UUID) (int, error) {
+	return 0, nil
+}
+
+type Transfer struct {
+	DstUserID uuid.UUID
+	SrcUserID uuid.UUID
+	Amount    int
+
+	DstUsername string
+	SrcUsername string
+}
+
+type TransferGetter struct {
+	db *pgxpool.Pool
+}
+
+func NewTransferGetter(db *pgxpool.Pool) *TransferGetter {
+	return &TransferGetter{db: db}
+}
+
+func (g *TransferGetter) GetTransfersByUserID(ctx context.Context, userID uuid.UUID) ([]*Transfer, error) {
+	return []*Transfer{}, nil
+}
+
+type ItemCount struct {
+	Item
+	Count int
+}
+
+type ItemGetter struct {
+	db *pgxpool.Pool
+}
+
+func NewItemGetter(db *pgxpool.Pool) *ItemGetter {
+	return &ItemGetter{db: db}
+}
+
+func (g *ItemGetter) GetItemCountsByUserID(ctx context.Context, userID uuid.UUID) ([]*ItemCount, error) {
+	return []*ItemCount{}, nil
 }
 
 func getUser(ctx context.Context, db pgxExecutor, id uuid.UUID) (*User, error) {
