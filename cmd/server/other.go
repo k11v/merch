@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 var (
@@ -19,6 +20,24 @@ type User struct {
 	Username     string
 	PasswordHash string
 	Balance      int
+}
+
+type Transaction struct {
+	ID         uuid.UUID
+	FromUserID *uuid.UUID
+	ToUserID   *uuid.UUID
+	Amount     int
+
+	FromUsername *string
+	ToUsername   *string
+}
+
+type pgxExecutor interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
+	Exec(ctx context.Context, sql string, arguments ...any) (commandTag pgconn.CommandTag, err error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
 }
 
 func getUserByUsername(ctx context.Context, db pgxExecutor, username string) (*User, error) {
@@ -59,5 +78,120 @@ func rowToUser(collectable pgx.CollectableRow) (*User, error) {
 		Username:     collected.Username,
 		PasswordHash: collected.PasswordHash,
 		Balance:      collected.Balance,
+	}, nil
+}
+
+func getUsersByIDsForUpdate(ctx context.Context, db pgxExecutor, ids ...uuid.UUID) (map[uuid.UUID]*User, error) {
+	query := `
+		SELECT id, username, password_hash, balance
+		FROM users
+		WHERE id = ANY($1)
+		FOR UPDATE
+	`
+	args := []any{ids}
+
+	rows, _ := db.Query(ctx, query, args...)
+	users, err := pgx.CollectRows(rows, rowToUser)
+	if err != nil {
+		return nil, err
+	}
+
+	usersMap := make(map[uuid.UUID]*User)
+	for _, u := range users {
+		usersMap[u.ID] = u
+	}
+
+	for _, id := range ids {
+		_, ok := usersMap[id]
+		if !ok {
+			return nil, ErrUserNotExist
+		}
+	}
+
+	return usersMap, nil
+}
+
+func updateUserBalance(ctx context.Context, db pgxExecutor, id uuid.UUID, balance int) (*User, error) {
+	query := `
+		UPDATE users
+		SET balance = $2
+		WHERE id = $1
+		RETURNING id, username, password_hash, balance
+	`
+	args := []any{id, balance}
+
+	rows, _ := db.Query(ctx, query, args...)
+	user, err := pgx.CollectExactlyOneRow(rows, rowToUser)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrUserNotExist
+		}
+		return nil, err
+	}
+
+	return user, nil
+}
+
+func createTransaction(ctx context.Context, db pgxExecutor, fromUserID, toUserID *uuid.UUID, amount int) (*Transaction, error) {
+	query := `
+		INSERT INTO transactions (from_user_id, to_user_id, amount)
+		VALUES ($1, $2, $3)
+		RETURNING id, from_user_id, to_user_id, amount
+	`
+	args := []any{fromUserID, toUserID, amount}
+
+	rows, _ := db.Query(ctx, query, args...)
+	transaction, err := pgx.CollectExactlyOneRow(rows, rowToTransaction)
+	if err != nil {
+		return nil, err
+	}
+
+	return transaction, nil
+}
+
+func rowToTransaction(collectable pgx.CollectableRow) (*Transaction, error) {
+	type row struct {
+		ID         uuid.UUID  `db:"id"`
+		FromUserID *uuid.UUID `db:"from_user_id"`
+		ToUserID   *uuid.UUID `db:"to_user_id"`
+		Amount     int        `db:"amount"`
+	}
+
+	collected, err := pgx.RowToStructByName[row](collectable)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Transaction{
+		ID:         collected.ID,
+		FromUserID: collected.FromUserID,
+		ToUserID:   collected.ToUserID,
+		Amount:     collected.Amount,
+	}, nil
+}
+
+func rowToTransactionWithUsernames(collectable pgx.CollectableRow) (*Transaction, error) {
+	type row struct {
+		ID         uuid.UUID  `db:"id"`
+		FromUserID *uuid.UUID `db:"from_user_id"`
+		ToUserID   *uuid.UUID `db:"to_user_id"`
+		Amount     int        `db:"amount"`
+
+		FromUsername *string `db:"from_username"`
+		ToUsername   *string `db:"to_username"`
+	}
+
+	collected, err := pgx.RowToStructByName[row](collectable)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Transaction{
+		ID:           collected.ID,
+		FromUserID:   collected.FromUserID,
+		ToUserID:     collected.ToUserID,
+		Amount:       collected.Amount,
+		FromUsername: collected.FromUsername,
+		ToUsername:   collected.ToUsername,
 	}, nil
 }
