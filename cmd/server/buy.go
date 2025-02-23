@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/k11v/merch/api/merch"
 )
@@ -40,18 +41,42 @@ func (h *Handler) GetAPIBuyItem(ctx context.Context, request merch.GetAPIBuyItem
 		return merch.GetAPIBuyItem400JSONResponse{Errors: &errors}, nil
 	}
 
-	item, err := getItemByName(ctx, h.db, itemName)
+	purchaser := NewPurchaser(h.db)
+	err := purchaser.PurchaseByName(ctx, itemName, userID)
 	if err != nil {
 		if errors.Is(err, ErrItemNotExist) {
 			errors := "item does not exist"
 			return merch.GetAPIBuyItem400JSONResponse{Errors: &errors}, nil
 		}
+		if errors.Is(err, ErrCoinNotEnough) {
+			errors := "not enough coin"
+			return merch.GetAPIBuyItem400JSONResponse{Errors: &errors}, nil
+		}
 		return nil, err
+	}
+
+	return merch.GetAPIBuyItem200Response{}, nil
+}
+
+var ErrCoinNotEnough = errors.New("not enough coin")
+
+type Purchaser struct {
+	db *pgxpool.Pool
+}
+
+func NewPurchaser(db *pgxpool.Pool) *Purchaser {
+	return &Purchaser{db: db}
+}
+
+func (h *Purchaser) PurchaseByName(ctx context.Context, itemName string, userID uuid.UUID) error {
+	item, err := getItemByName(ctx, h.db, itemName)
+	if err != nil {
+		return fmt.Errorf("Purchaser: %w", err)
 	}
 
 	tx, err := h.db.Begin(ctx)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("Purchaser: %w", err)
 	}
 	defer func() {
 		err = tx.Rollback(ctx)
@@ -62,37 +87,36 @@ func (h *Handler) GetAPIBuyItem(ctx context.Context, request merch.GetAPIBuyItem
 
 	user, err := getUserForUpdate(ctx, tx, userID)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("Purchaser: %w", err)
 	}
 
 	balance := user.Balance
 	balance -= item.Price
 	if balance < 0 {
-		errors := "not enough coins"
-		return merch.GetAPIBuyItem400JSONResponse{Errors: &errors}, nil
+		return fmt.Errorf("Purchaser: %w", ErrCoinNotEnough)
 	}
 
 	_, err = updateUserBalance(ctx, tx, userID, balance)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("Purchaser: %w", err)
 	}
 
 	_, err = createTransaction(ctx, tx, &userID, nil, item.Price)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("Purchaser: %w", err)
 	}
 
 	_, err = addUserItemAmount(ctx, tx, userID, item.ID, 1)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("Purchaser: %w", err)
 	}
 
 	err = tx.Commit(ctx)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("Purchaser: %w", err)
 	}
 
-	return merch.GetAPIBuyItem200Response{}, nil
+	return nil
 }
 
 func getItemByName(ctx context.Context, db pgxExecutor, name string) (*Item, error) {
