@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS payments (
     amount integer NOT NULL,
     PRIMARY KEY (id),
     FOREIGN KEY (user_id) REFERENCES users (id),
-    FOREIGN KEY (item_id) REFERENCES item_id (id),
+    FOREIGN KEY (item_id) REFERENCES items (id),
     CONSTRAINT payments_amount_ge_0 CHECK (amount >= 0)
 );
 CREATE INDEX IF NOT EXISTS payments_user_id_item_id_idx ON payments (user_id, item_id);
