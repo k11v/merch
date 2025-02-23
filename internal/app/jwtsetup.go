@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"os"
+	"path/filepath"
 )
 
 func SetupJWT(pubFile, privFile string) error {
@@ -29,8 +30,16 @@ func SetupJWT(pubFile, privFile string) error {
 	if err != nil {
 		return err
 	}
-
 	pubPEM, err := pemEncodeED25519PublicKey(pub)
+	if err != nil {
+		return err
+	}
+	privPEM, err := pemEncodeED25519PrivateKey(priv)
+	if err != nil {
+		return err
+	}
+
+	err = os.MkdirAll(filepath.Dir(pubFile), 0o700)
 	if err != nil {
 		return err
 	}
@@ -39,7 +48,7 @@ func SetupJWT(pubFile, privFile string) error {
 		return err
 	}
 
-	privPEM, err := pemEncodeED25519PrivateKey(priv)
+	err = os.MkdirAll(filepath.Dir(privFile), 0o700)
 	if err != nil {
 		return err
 	}
