@@ -19,20 +19,21 @@ func (h *Handler) GetAPIInfo(ctx context.Context, request merch.GetAPIInfoReques
 		panic(fmt.Errorf("can't get %s context value", ContextValueUserID))
 	}
 
-	user, err := getUser(ctx, h.db, userID)
+	itemGetter := NewPurchaseGetter(h.db)
+	userItemCounts, err := itemGetter.GetUserItemCountsByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	transactions, err := getTransactionsByUserID(ctx, h.db, userID)
+	transferGetter := NewTransferGetter(h.db)
+	transfers, err := transferGetter.GetTransfersByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	userItems, err := getUserItems(ctx, h.db, userID)
+	coinGetter := NewCoinGetter(h.db)
+	balance, err := coinGetter.GetBalance(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-
-	coins := user.Balance
 
 	type receivedHistoryItem = struct {
 		Amount   *int    `json:"amount,omitempty"`
@@ -48,22 +49,17 @@ func (h *Handler) GetAPIInfo(ctx context.Context, request merch.GetAPIInfoReques
 	}
 	received := make([]receivedHistoryItem, 0)
 	sent := make([]sentHistoryItem, 0)
-	for _, transaction := range transactions {
-		fromUserID := transaction.FromUserID
-		toUserID := transaction.ToUserID
-		if fromUserID == nil || toUserID == nil {
-			continue
-		}
-		if *fromUserID == userID {
+	for _, t := range transfers {
+		if t.SrcUserID == userID {
 			sent = append(sent, sentHistoryItem{
-				Amount: &transaction.Amount,
-				ToUser: transaction.ToUsername,
+				Amount: &t.Amount,
+				ToUser: &t.DstUsername,
 			})
 		}
-		if *toUserID == userID {
+		if t.DstUserID == userID {
 			received = append(received, receivedHistoryItem{
-				Amount:   &transaction.Amount,
-				FromUser: transaction.FromUsername,
+				Amount:   &t.Amount,
+				FromUser: &t.SrcUsername,
 			})
 		}
 	}
@@ -72,20 +68,20 @@ func (h *Handler) GetAPIInfo(ctx context.Context, request merch.GetAPIInfoReques
 		Quantity *int    `json:"quantity,omitempty"`
 		Type     *string `json:"type,omitempty"`
 	}
-	inventory := make([]inventoryItem, len(userItems))
-	for i, userItem := range userItems {
+	inventory := make([]inventoryItem, len(userItemCounts))
+	for i, userItem := range userItemCounts {
 		inventory[i] = inventoryItem{
-			Quantity: &userItem.Amount,
+			Quantity: &userItem.Count,
 			Type:     &userItem.ItemName,
 		}
 	}
 
 	return merch.GetAPIInfo200JSONResponse{
+		Coins: &balance,
 		CoinHistory: &history{
 			Received: &received,
 			Sent:     &sent,
 		},
-		Coins:     &coins,
 		Inventory: &inventory,
 	}, nil
 }
@@ -99,7 +95,11 @@ func NewCoinGetter(db *pgxpool.Pool) *CoinGetter {
 }
 
 func (g *CoinGetter) GetBalance(ctx context.Context, userID uuid.UUID) (int, error) {
-	return 0, nil
+	user, err := getUser(ctx, g.db, userID)
+	if err != nil {
+		return 0, err
+	}
+	return user.Balance, nil
 }
 
 type Transfer struct {
@@ -120,24 +120,57 @@ func NewTransferGetter(db *pgxpool.Pool) *TransferGetter {
 }
 
 func (g *TransferGetter) GetTransfersByUserID(ctx context.Context, userID uuid.UUID) ([]*Transfer, error) {
-	return []*Transfer{}, nil
+	transactions, err := getTransactionsByUserID(ctx, g.db, userID)
+	if err != nil {
+		return nil, err
+	}
+	transfers := make([]*Transfer, 0)
+	for _, t := range transactions {
+		if t.ToUserID == nil || t.FromUserID == nil {
+			continue
+		}
+		transfers = append(transfers, &Transfer{
+			DstUserID:   *t.ToUserID,
+			SrcUserID:   *t.FromUserID,
+			Amount:      t.Amount,
+			DstUsername: *t.ToUsername,
+			SrcUsername: *t.FromUsername,
+		})
+	}
+	return transfers, nil
 }
 
-type ItemCount struct {
-	Item
-	Count int
+type UserItemCount struct {
+	UserID uuid.UUID
+	ItemID uuid.UUID
+	Count  int
+
+	ItemName string
 }
 
 type ItemGetter struct {
 	db *pgxpool.Pool
 }
 
-func NewItemGetter(db *pgxpool.Pool) *ItemGetter {
+func NewPurchaseGetter(db *pgxpool.Pool) *ItemGetter {
 	return &ItemGetter{db: db}
 }
 
-func (g *ItemGetter) GetItemCountsByUserID(ctx context.Context, userID uuid.UUID) ([]*ItemCount, error) {
-	return []*ItemCount{}, nil
+func (g *ItemGetter) GetUserItemCountsByUserID(ctx context.Context, userID uuid.UUID) ([]*UserItemCount, error) {
+	userItems, err := getUserItems(ctx, g.db, userID)
+	if err != nil {
+		return nil, err
+	}
+	userItemCounts := make([]*UserItemCount, 0)
+	for _, ui := range userItems {
+		userItemCounts = append(userItemCounts, &UserItemCount{
+			UserID:   ui.UserID,
+			ItemID:   ui.ItemID,
+			Count:    ui.Amount,
+			ItemName: ui.ItemName,
+		})
+	}
+	return userItemCounts, nil
 }
 
 func getUser(ctx context.Context, db pgxExecutor, id uuid.UUID) (*User, error) {
