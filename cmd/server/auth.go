@@ -35,7 +35,7 @@ func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 	passwordAuthenticator := auth.NewPasswordAuthenticator(h.db, passwordHasher)
 	authData, err := passwordAuthenticator.AuthenticatePassword(ctx, username, password)
 	if err != nil {
-		if errors.Is(err, auth.ErrInvalidUsernameOrPassword) {
+		if errors.Is(err, auth.ErrPasswordNotMatch) {
 			errors := "invalid username or password"
 			return merch.PostAPIAuth401JSONResponse{Errors: &errors}, nil
 		}
