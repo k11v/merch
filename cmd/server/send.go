@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/k11v/merch/api/merch"
 )
@@ -43,24 +44,57 @@ func (h *Handler) PostAPISendCoin(ctx context.Context, request merch.PostAPISend
 
 	fromUserID := requestUserID
 
-	toUser, err := getUserByUsername(ctx, h.db, toUsername)
+	transferer := NewTransferer(h.db)
+	err := transferer.TransferByUsername(ctx, toUsername, fromUserID, amount)
 	if err != nil {
-		if errors.Is(err, ErrUserNotExist) {
+		if errors.Is(err, ErrDstUserNotFound) {
 			errors := "toUser doesn't exist"
+			return merch.PostAPISendCoin400JSONResponse{Errors: &errors}, nil
+		}
+		if errors.Is(err, ErrSrcUserAndDstUserEqual) {
+			errors := "fromUser and toUser are equal"
+			return merch.PostAPISendCoin400JSONResponse{Errors: &errors}, nil
+		}
+		if errors.Is(err, ErrCoinNotEnough) {
+			errors := "not enough coins"
 			return merch.PostAPISendCoin400JSONResponse{Errors: &errors}, nil
 		}
 		return nil, err
 	}
-	toUserID := toUser.ID
 
-	if fromUserID == toUserID {
-		errors := "identical fromUser and toUser"
-		return merch.PostAPISendCoin400JSONResponse{Errors: &errors}, nil
+	return merch.PostAPISendCoin200Response{}, nil
+}
+
+var (
+	ErrDstUserNotFound        = errors.New("dst user not found")
+	ErrSrcUserAndDstUserEqual = errors.New("src user and dst user are equal")
+)
+
+type Transferer struct {
+	db *pgxpool.Pool
+}
+
+func NewTransferer(db *pgxpool.Pool) *Transferer {
+	return &Transferer{db: db}
+}
+
+func (h *Transferer) TransferByUsername(ctx context.Context, dstUsername string, srcUserID uuid.UUID, amount int) error {
+	dstUser, err := getUserByUsername(ctx, h.db, dstUsername)
+	if err != nil {
+		if errors.Is(err, ErrUserNotExist) {
+			return fmt.Errorf("Transferer: %w", ErrDstUserNotFound)
+		}
+		return fmt.Errorf("Transferer: %w", err)
+	}
+	dstUserID := dstUser.ID
+
+	if srcUserID == dstUserID {
+		return fmt.Errorf("Transferer: %w", ErrSrcUserAndDstUserEqual)
 	}
 
 	tx, err := h.db.Begin(ctx)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("Transferer: %w", err)
 	}
 	defer func() {
 		err = tx.Rollback(ctx)
@@ -69,44 +103,43 @@ func (h *Handler) PostAPISendCoin(ctx context.Context, request merch.PostAPISend
 		}
 	}()
 
-	usersMap, err := getUsersByIDsForUpdate(ctx, tx, fromUserID, toUserID)
+	usersMap, err := getUsersByIDsForUpdate(ctx, tx, srcUserID, dstUserID)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("Transferer: %w", err)
 	}
-	fromUser := usersMap[fromUserID]
-	toUser = usersMap[toUserID]
+	srcUser := usersMap[srcUserID]
+	dstUser = usersMap[dstUserID]
 
-	fromUserBalance := fromUser.Balance
-	fromUserBalance -= amount
-	if fromUserBalance < 0 {
-		errors := "not enough coins"
-		return merch.PostAPISendCoin400JSONResponse{Errors: &errors}, nil
-	}
-
-	toUserBalance := toUser.Balance
-	toUserBalance += amount
-
-	_, err = updateUserBalance(ctx, tx, fromUserID, fromUserBalance)
-	if err != nil {
-		return nil, err
+	srcUserBalance := srcUser.Balance
+	srcUserBalance -= amount
+	if srcUserBalance < 0 {
+		return fmt.Errorf("Transferer: %w", ErrCoinNotEnough)
 	}
 
-	_, err = updateUserBalance(ctx, tx, toUserID, toUserBalance)
+	dstUserBalance := dstUser.Balance
+	dstUserBalance += amount
+
+	_, err = updateUserBalance(ctx, tx, srcUserID, srcUserBalance)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("Transferer: %w", err)
 	}
 
-	_, err = createTransaction(ctx, tx, &fromUserID, &toUserID, amount)
+	_, err = updateUserBalance(ctx, tx, dstUserID, dstUserBalance)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("Transferer: %w", err)
+	}
+
+	_, err = createTransaction(ctx, tx, &srcUserID, &dstUserID, amount)
+	if err != nil {
+		return fmt.Errorf("Transferer: %w", err)
 	}
 
 	err = tx.Commit(ctx)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("Transferer: %w", err)
 	}
 
-	return merch.PostAPISendCoin200Response{}, nil
+	return nil
 }
 
 func getUsersByIDsForUpdate(ctx context.Context, db pgxExecutor, ids ...uuid.UUID) (map[uuid.UUID]*User, error) {
