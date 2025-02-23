@@ -21,10 +21,9 @@ import (
 )
 
 var (
-	ErrInvalidUsernameOrPassword = errors.New("invalid username or password")
-	ErrPasswordNotMatch          = errors.New("password does not match hash")
-	ErrUserExist                 = errors.New("user already exists")
-	ErrUserNotExist              = errors.New("user does not exist")
+	ErrPasswordNotMatch = errors.New("password does not match hash")
+	ErrUserExist        = errors.New("user already exists")
+	ErrUserNotExist     = errors.New("user does not exist")
 )
 
 type User struct {
@@ -301,7 +300,7 @@ func (ph *PasswordHasher) Verify(password, passwordHash string) error {
 	if subtle.ConstantTimeCompare(gotHash, wantHash) == 1 {
 		return nil
 	}
-	return fmt.Errorf("VerifyPasswordArgon2ID: %w", ErrInvalidUsernameOrPassword)
+	return fmt.Errorf("VerifyPasswordArgon2ID: %w", ErrPasswordNotMatch)
 }
 
 func parsePasswordHashArgon2ID(passwordHash string) (hash []byte, salt []byte, params *Argon2IDParams, err error) {
