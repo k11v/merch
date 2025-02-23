@@ -77,11 +77,11 @@ func (h *Handler) GetAPIInfo(ctx context.Context, request merch.GetAPIInfoReques
 	}
 
 	return merch.GetAPIInfo200JSONResponse{
-		Coins: &balance,
 		CoinHistory: &history{
 			Received: &received,
 			Sent:     &sent,
 		},
+		Coins:     &balance,
 		Inventory: &inventory,
 	}, nil
 }
