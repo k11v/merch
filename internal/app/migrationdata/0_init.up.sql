@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS users (
     username text NOT NULL,
     password_hash text NOT NULL,
     balance integer NOT NULL DEFAULT 0,
-    PRIMARY KEY (id)
+    PRIMARY KEY (id),
+    CONSTRAINT users_balance_ge_0 CHECK (balance >= 0)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_idx ON users (username);
 
@@ -15,7 +16,8 @@ CREATE TABLE IF NOT EXISTS items (
     id uuid NOT NULL DEFAULT uuid_generate_v4(),
     name text NOT NULL,
     price integer NOT NULL,
-    PRIMARY KEY (id)
+    PRIMARY KEY (id),
+    CONSTRAINT items_price_ge_0 CHECK (price >= 0)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS items_name_idx ON items (name);
 INSERT INTO items (id, name, price)
@@ -39,7 +41,8 @@ CREATE TABLE IF NOT EXISTS transfers (
     amount integer NOT NULL,
     PRIMARY KEY (id),
     FOREIGN KEY (dst_user_id) REFERENCES users (id),
-    FOREIGN KEY (src_user_id) REFERENCES users (id)
+    FOREIGN KEY (src_user_id) REFERENCES users (id),
+    CONSTRAINT transfers_amount_ge_0 CHECK (amount >= 0)
 );
 CREATE INDEX IF NOT EXISTS transfers_dst_user_id_idx ON transfers (dst_user_id);
 CREATE INDEX IF NOT EXISTS transfers_src_user_id_idx ON transfers (src_user_id);
@@ -52,7 +55,8 @@ CREATE TABLE IF NOT EXISTS payments (
     amount integer NOT NULL,
     PRIMARY KEY (id),
     FOREIGN KEY (user_id) REFERENCES users (id),
-    FOREIGN KEY (item_id) REFERENCES item_id (id)
+    FOREIGN KEY (item_id) REFERENCES item_id (id),
+    CONSTRAINT payments_amount_ge_0 CHECK (amount >= 0)
 );
 CREATE INDEX IF NOT EXISTS payments_user_id_item_id_idx ON payments (user_id, item_id);
 
