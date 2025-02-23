@@ -47,17 +47,17 @@ CREATE TABLE IF NOT EXISTS transfers (
 CREATE INDEX IF NOT EXISTS transfers_dst_user_id_idx ON transfers (dst_user_id);
 CREATE INDEX IF NOT EXISTS transfers_src_user_id_idx ON transfers (src_user_id);
 
-CREATE TABLE IF NOT EXISTS payments (
+CREATE TABLE IF NOT EXISTS purchases (
     id uuid NOT NULL DEFAULT uuid_generate_v4(),
     created_at timestamp with time zone NOT NULL DEFAULT now(),
     user_id uuid NOT NULL,
     item_id uuid NOT NULL,
-    amount integer NOT NULL,
+    amount integer NOT NULL, -- in coins
     PRIMARY KEY (id),
     FOREIGN KEY (user_id) REFERENCES users (id),
     FOREIGN KEY (item_id) REFERENCES items (id),
-    CONSTRAINT payments_amount_ge_0 CHECK (amount >= 0)
+    CONSTRAINT purchases_amount_ge_0 CHECK (amount >= 0)
 );
-CREATE INDEX IF NOT EXISTS payments_user_id_item_id_idx ON payments (user_id, item_id);
+CREATE INDEX IF NOT EXISTS purchases_user_id_item_id_idx ON purchases (user_id, item_id);
 
 COMMIT;
