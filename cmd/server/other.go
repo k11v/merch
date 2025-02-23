@@ -185,32 +185,6 @@ func rowToTransaction(collectable pgx.CollectableRow) (*Transaction, error) {
 	}, nil
 }
 
-func rowToTransactionWithUsernames(collectable pgx.CollectableRow) (*Transaction, error) {
-	type row struct {
-		ID         uuid.UUID  `db:"id"`
-		FromUserID *uuid.UUID `db:"from_user_id"`
-		ToUserID   *uuid.UUID `db:"to_user_id"`
-		Amount     int        `db:"amount"`
-
-		FromUsername *string `db:"from_username"`
-		ToUsername   *string `db:"to_username"`
-	}
-
-	collected, err := pgx.RowToStructByName[row](collectable)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Transaction{
-		ID:           collected.ID,
-		FromUserID:   collected.FromUserID,
-		ToUserID:     collected.ToUserID,
-		Amount:       collected.Amount,
-		FromUsername: collected.FromUsername,
-		ToUsername:   collected.ToUsername,
-	}, nil
-}
-
 func rowToUserItemWithName(collectable pgx.CollectableRow) (*UserItem, error) {
 	type row struct {
 		UserID uuid.UUID `db:"user_id"`

@@ -2,14 +2,14 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/k11v/merch/api/merch"
+	"github.com/k11v/merch/internal/coin"
+	"github.com/k11v/merch/internal/item"
+	"github.com/k11v/merch/internal/transfer"
 )
 
 // GetAPIInfo implements merch.StrictServerInterface.
@@ -19,17 +19,17 @@ func (h *Handler) GetAPIInfo(ctx context.Context, request merch.GetAPIInfoReques
 		panic(fmt.Errorf("can't get %s context value", ContextValueUserID))
 	}
 
-	itemGetter := NewPurchaseGetter(h.db)
+	itemGetter := item.NewGetter(h.db)
 	userItemCounts, err := itemGetter.GetUserItemCountsByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	transferGetter := NewTransferGetter(h.db)
+	transferGetter := transfer.NewGetter(h.db)
 	transfers, err := transferGetter.GetTransfersByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	coinGetter := NewCoinGetter(h.db)
+	coinGetter := coin.NewGetter(h.db)
 	balance, err := coinGetter.GetBalance(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -84,148 +84,4 @@ func (h *Handler) GetAPIInfo(ctx context.Context, request merch.GetAPIInfoReques
 		},
 		Inventory: &inventory,
 	}, nil
-}
-
-type CoinGetter struct {
-	db *pgxpool.Pool
-}
-
-func NewCoinGetter(db *pgxpool.Pool) *CoinGetter {
-	return &CoinGetter{db: db}
-}
-
-func (g *CoinGetter) GetBalance(ctx context.Context, userID uuid.UUID) (int, error) {
-	user, err := getUser(ctx, g.db, userID)
-	if err != nil {
-		return 0, err
-	}
-	return user.Balance, nil
-}
-
-type Transfer struct {
-	DstUserID uuid.UUID
-	SrcUserID uuid.UUID
-	Amount    int
-
-	DstUsername string
-	SrcUsername string
-}
-
-type TransferGetter struct {
-	db *pgxpool.Pool
-}
-
-func NewTransferGetter(db *pgxpool.Pool) *TransferGetter {
-	return &TransferGetter{db: db}
-}
-
-func (g *TransferGetter) GetTransfersByUserID(ctx context.Context, userID uuid.UUID) ([]*Transfer, error) {
-	transactions, err := getTransactionsByUserID(ctx, g.db, userID)
-	if err != nil {
-		return nil, err
-	}
-	transfers := make([]*Transfer, 0)
-	for _, t := range transactions {
-		if t.ToUserID == nil || t.FromUserID == nil {
-			continue
-		}
-		transfers = append(transfers, &Transfer{
-			DstUserID:   *t.ToUserID,
-			SrcUserID:   *t.FromUserID,
-			Amount:      t.Amount,
-			DstUsername: *t.ToUsername,
-			SrcUsername: *t.FromUsername,
-		})
-	}
-	return transfers, nil
-}
-
-type UserItemCount struct {
-	UserID uuid.UUID
-	ItemID uuid.UUID
-	Count  int
-
-	ItemName string
-}
-
-type ItemGetter struct {
-	db *pgxpool.Pool
-}
-
-func NewPurchaseGetter(db *pgxpool.Pool) *ItemGetter {
-	return &ItemGetter{db: db}
-}
-
-func (g *ItemGetter) GetUserItemCountsByUserID(ctx context.Context, userID uuid.UUID) ([]*UserItemCount, error) {
-	userItems, err := getUserItems(ctx, g.db, userID)
-	if err != nil {
-		return nil, err
-	}
-	userItemCounts := make([]*UserItemCount, 0)
-	for _, ui := range userItems {
-		userItemCounts = append(userItemCounts, &UserItemCount{
-			UserID:   ui.UserID,
-			ItemID:   ui.ItemID,
-			Count:    ui.Amount,
-			ItemName: ui.ItemName,
-		})
-	}
-	return userItemCounts, nil
-}
-
-func getUser(ctx context.Context, db pgxExecutor, id uuid.UUID) (*User, error) {
-	query := `
-		SELECT id, username, password_hash, balance
-		FROM users
-		WHERE id = $1
-	`
-	args := []any{id}
-
-	rows, _ := db.Query(ctx, query, args...)
-	user, err := pgx.CollectExactlyOneRow(rows, rowToUser)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrUserNotExist
-		}
-		return nil, err
-	}
-
-	return user, nil
-}
-
-func getTransactionsByUserID(ctx context.Context, db pgxExecutor, userID uuid.UUID) ([]*Transaction, error) {
-	query := `
-		SELECT t.id, t.from_user_id, from_u.username as from_username, t.to_user_id, to_u.username as to_username, t.amount
-		FROM transactions t
-		LEFT JOIN users from_u ON t.from_user_id = from_u.id
-		LEFT JOIN users to_u ON t.to_user_id = to_u.id
-		WHERE t.from_user_id = $1 OR t.to_user_id = $1
-	`
-	args := []any{userID}
-
-	rows, _ := db.Query(ctx, query, args...)
-	transactions, err := pgx.CollectRows(rows, rowToTransactionWithUsernames)
-	if err != nil {
-		return nil, err
-	}
-
-	return transactions, nil
-}
-
-func getUserItems(ctx context.Context, db pgxExecutor, userID uuid.UUID) ([]*UserItem, error) {
-	query := `
-		SELECT ui.user_id, ui.item_id, i.name AS item_name, ui.amount
-		FROM users_items ui
-		JOIN items i ON ui.item_id = i.id
-		WHERE ui.user_id = $1
-	`
-	args := []any{userID}
-
-	rows, _ := db.Query(ctx, query, args...)
-	userItems, err := pgx.CollectRows(rows, rowToUserItemWithName)
-	if err != nil {
-		return nil, err
-	}
-
-	return userItems, nil
 }
