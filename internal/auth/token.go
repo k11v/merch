@@ -1,4 +1,4 @@
-package main
+package auth
 
 import (
 	"crypto/ed25519"
@@ -18,7 +18,7 @@ func NewTokenAuthenticator(jwtVerificationKey ed25519.PublicKey) *TokenAuthentic
 	return &TokenAuthenticator{jwtVerificationKey: jwtVerificationKey}
 }
 
-func (ta *TokenAuthenticator) AuthenticateToken(token string) (*AuthData, error) {
+func (ta *TokenAuthenticator) AuthenticateToken(token string) (*Data, error) {
 	jwtToken, err := jwt.ParseWithClaims(
 		token,
 		&jwt.RegisteredClaims{},
@@ -61,7 +61,7 @@ func (ta *TokenAuthenticator) AuthenticateToken(token string) (*AuthData, error)
 		return nil, fmt.Errorf("jti token claim: %w", err)
 	}
 
-	return &AuthData{UserID: userID}, nil
+	return &Data{UserID: userID}, nil
 }
 
 type TokenIssuer struct {
