@@ -53,8 +53,8 @@ func NewTransferer(db *pgxpool.Pool) *Transferer {
 	return &Transferer{db: db}
 }
 
-func (h *Transferer) TransferByUsername(ctx context.Context, dstUsername string, srcUserID uuid.UUID, amount int) error {
-	dstUser, err := getUserByUsername(ctx, h.db, dstUsername)
+func (t *Transferer) TransferByUsername(ctx context.Context, dstUsername string, srcUserID uuid.UUID, amount int) error {
+	dstUser, err := getUserByUsername(ctx, t.db, dstUsername)
 	if err != nil {
 		if errors.Is(err, ErrUserNotExist) {
 			return fmt.Errorf("Transferer: %w", ErrDstUserNotFound)
@@ -67,7 +67,7 @@ func (h *Transferer) TransferByUsername(ctx context.Context, dstUsername string,
 		return fmt.Errorf("Transferer: %w", ErrSrcUserAndDstUserEqual)
 	}
 
-	tx, err := h.db.Begin(ctx)
+	tx, err := t.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("Transferer: %w", err)
 	}
