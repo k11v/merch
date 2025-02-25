@@ -91,7 +91,7 @@ func createUser(ctx context.Context, db pgxExecutor, username string, passwordHa
 	user, err := pgx.CollectExactlyOneRow(rows, rowToUser)
 	if err != nil {
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgerrcode.IsIntegrityConstraintViolation(pgErr.Code) && pgErr.ConstraintName == "users_username_idx" {
+		if errors.As(err, &pgErr) && isConstraintPgError(pgErr, "users_username_idx") {
 			return nil, ErrUserExist
 		}
 		return nil, err
@@ -139,4 +139,8 @@ func rowToUser(collectable pgx.CollectableRow) (*User, error) {
 		PasswordHash: collected.PasswordHash,
 		Balance:      collected.Balance,
 	}, nil
+}
+
+func isConstraintPgError(e *pgconn.PgError, constraint string) bool {
+	return pgerrcode.IsIntegrityConstraintViolation(e.Code) && e.ConstraintName == constraint
 }
