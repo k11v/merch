@@ -7,7 +7,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var ErrUserNotExist = errors.New("user does not exist")
@@ -28,10 +27,10 @@ type pgxExecutor interface {
 }
 
 type Getter struct {
-	db *pgxpool.Pool
+	db pgxExecutor
 }
 
-func NewGetter(db *pgxpool.Pool) *Getter {
+func NewGetter(db pgxExecutor) *Getter {
 	return &Getter{db: db}
 }
 
