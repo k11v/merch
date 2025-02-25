@@ -12,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+const InitialBalance = 1000
+
 var (
 	ErrPasswordNotMatch = errors.New("password does not match hash")
 	ErrUserExist        = errors.New("user already exists")
@@ -69,7 +71,6 @@ func (pa *PasswordAuthenticator) AuthenticatePassword(ctx context.Context, usern
 			}
 		}()
 
-		initialBalance := 1000
 		passwordHash, err := pa.passwordHasher.Hash(password)
 		if err != nil {
 			return nil, err
@@ -79,11 +80,11 @@ func (pa *PasswordAuthenticator) AuthenticatePassword(ctx context.Context, usern
 		if err != nil {
 			return nil, err
 		}
-		user, err = updateUserBalance(ctx, tx, user.ID, initialBalance)
+		user, err = updateUserBalance(ctx, tx, user.ID, InitialBalance)
 		if err != nil {
 			return nil, err
 		}
-		_, err = createTransaction(ctx, tx, nil, &user.ID, initialBalance)
+		_, err = createTransaction(ctx, tx, nil, &user.ID, InitialBalance)
 		if err != nil {
 			return nil, err
 		}
