@@ -23,8 +23,8 @@ type Argon2IDParams struct {
 
 func DefaultArgon2IDParams() *Argon2IDParams {
 	return &Argon2IDParams{
-		Memory:      1,
-		Time:        64 * 1024,
+		Memory:      64 * 1024,
+		Time:        1,
 		Parallelism: 1,
 		SaltLen:     16,
 		HashLen:     32,
