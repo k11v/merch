@@ -5,22 +5,18 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/k11v/merch/internal/app"
 	"github.com/k11v/merch/internal/app/apptest"
 )
 
 func TestPasswordAuthenticator(t *testing.T) {
 	var (
 		ctx = context.Background()
-		db  = newTestPgxPool(t, ctx)
+		db  = apptest.NewPostgresPool(t, ctx)
 	)
 
 	t.Run("creates different users", func(t *testing.T) {
 		var (
-			tx = newTestPgxTx(t, ctx, db)
+			tx = apptest.BeginPostgresTx(t, ctx, db)
 			ph = NewPasswordHasher(DefaultArgon2IDParams())
 			pa = NewPasswordAuthenticator(tx, ph)
 		)
@@ -43,7 +39,7 @@ func TestPasswordAuthenticator(t *testing.T) {
 
 	t.Run("creates and gets user", func(t *testing.T) {
 		var (
-			tx = newTestPgxTx(t, ctx, db)
+			tx = apptest.BeginPostgresTx(t, ctx, db)
 			ph = NewPasswordHasher(DefaultArgon2IDParams())
 			pa = NewPasswordAuthenticator(tx, ph)
 		)
@@ -66,7 +62,7 @@ func TestPasswordAuthenticator(t *testing.T) {
 
 	t.Run("doesn't get user with different password", func(t *testing.T) {
 		var (
-			tx = newTestPgxTx(t, ctx, db)
+			tx = apptest.BeginPostgresTx(t, ctx, db)
 			ph = NewPasswordHasher(DefaultArgon2IDParams())
 			pa = NewPasswordAuthenticator(tx, ph)
 		)
@@ -84,7 +80,7 @@ func TestPasswordAuthenticator(t *testing.T) {
 
 	t.Run("creates user with initial balance", func(t *testing.T) {
 		var (
-			tx = newTestPgxTx(t, ctx, db)
+			tx = apptest.BeginPostgresTx(t, ctx, db)
 			ph = NewPasswordHasher(DefaultArgon2IDParams())
 			pa = NewPasswordAuthenticator(tx, ph)
 		)
@@ -104,46 +100,4 @@ func TestPasswordAuthenticator(t *testing.T) {
 			t.Fatalf("got %d balance, want %d", got, want)
 		}
 	})
-}
-
-func newTestPgxPool(t testing.TB, ctx context.Context) *pgxpool.Pool {
-	t.Helper()
-
-	connectionString, teardown, err := apptest.SetupPostgres(ctx)
-	if err != nil {
-		t.Fatalf("can't setup Postgres: %v", err)
-	}
-	t.Cleanup(func() {
-		if teardownErr := teardown(); teardownErr != nil {
-			t.Errorf("didn't teardown Postgres: %v", teardownErr)
-		}
-	})
-
-	pool, err := app.NewPostgresPool(ctx, connectionString)
-	if err != nil {
-		t.Fatalf("can't create Postgres pool: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
-	return pool
-}
-
-// newTestPgxTx begins a new Postgres transaction and returns it.
-// It shouldn't be committed or rolled back manually.
-// It is automatically rolled back on test cleanup.
-func newTestPgxTx(t testing.TB, ctx context.Context, db *pgxpool.Pool) pgx.Tx {
-	t.Helper()
-
-	tx, err := db.Begin(ctx)
-	if err != nil {
-		t.Fatalf("can't begin Postgres transaction: %v", err)
-	}
-	t.Cleanup(func() {
-		rollbackErr := tx.Rollback(ctx)
-		if rollbackErr != nil {
-			t.Errorf("didn't rollback Postgres transaction: %v", err)
-		}
-	})
-
-	return tx
 }
