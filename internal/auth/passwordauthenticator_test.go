@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/k11v/merch/internal/app"
@@ -12,12 +13,16 @@ import (
 )
 
 func TestPasswordAuthenticator(t *testing.T) {
+	var (
+		ctx = context.Background()
+		db  = newTestPgxPool(t, ctx)
+	)
+
 	t.Run("creates different users", func(t *testing.T) {
 		var (
-			ctx = context.Background()
-			db  = newTestPgxPool(t, ctx)
-			ph  = NewPasswordHasher(DefaultArgon2IDParams())
-			pa  = NewPasswordAuthenticator(db, ph)
+			tx = newTestPgxTx(t, ctx, db)
+			ph = NewPasswordHasher(DefaultArgon2IDParams())
+			pa = NewPasswordAuthenticator(tx, ph)
 		)
 
 		aliceData, err := pa.AuthenticatePassword(ctx, "alice", "alice123")
@@ -38,10 +43,9 @@ func TestPasswordAuthenticator(t *testing.T) {
 
 	t.Run("creates and gets user", func(t *testing.T) {
 		var (
-			ctx = context.Background()
-			db  = newTestPgxPool(t, ctx)
-			ph  = NewPasswordHasher(DefaultArgon2IDParams())
-			pa  = NewPasswordAuthenticator(db, ph)
+			tx = newTestPgxTx(t, ctx, db)
+			ph = NewPasswordHasher(DefaultArgon2IDParams())
+			pa = NewPasswordAuthenticator(tx, ph)
 		)
 
 		aliceData1, err := pa.AuthenticatePassword(ctx, "alice", "alice123")
@@ -62,10 +66,9 @@ func TestPasswordAuthenticator(t *testing.T) {
 
 	t.Run("doesn't get user with different password", func(t *testing.T) {
 		var (
-			ctx = context.Background()
-			db  = newTestPgxPool(t, ctx)
-			ph  = NewPasswordHasher(DefaultArgon2IDParams())
-			pa  = NewPasswordAuthenticator(db, ph)
+			tx = newTestPgxTx(t, ctx, db)
+			ph = NewPasswordHasher(DefaultArgon2IDParams())
+			pa = NewPasswordAuthenticator(tx, ph)
 		)
 
 		_, err := pa.AuthenticatePassword(ctx, "alice", "alice123")
@@ -81,10 +84,9 @@ func TestPasswordAuthenticator(t *testing.T) {
 
 	t.Run("creates user with initial balance", func(t *testing.T) {
 		var (
-			ctx = context.Background()
-			db  = newTestPgxPool(t, ctx)
-			ph  = NewPasswordHasher(DefaultArgon2IDParams())
-			pa  = NewPasswordAuthenticator(db, ph)
+			tx = newTestPgxTx(t, ctx, db)
+			ph = NewPasswordHasher(DefaultArgon2IDParams())
+			pa = NewPasswordAuthenticator(tx, ph)
 		)
 
 		_, err := pa.AuthenticatePassword(ctx, "alice", "alice123")
@@ -93,7 +95,7 @@ func TestPasswordAuthenticator(t *testing.T) {
 		}
 
 		// TODO: Find a public type/func to use instead.
-		user, err := getUserByUsername(ctx, db, "alice")
+		user, err := getUserByUsername(ctx, tx, "alice")
 		if err != nil {
 			t.Fatalf("got %v error", err)
 		}
@@ -124,4 +126,24 @@ func newTestPgxPool(t testing.TB, ctx context.Context) *pgxpool.Pool {
 	t.Cleanup(pool.Close)
 
 	return pool
+}
+
+// newTestPgxTx begins a new Postgres transaction and returns it.
+// It shouldn't be committed or rolled back manually.
+// It is automatically rolled back on test cleanup.
+func newTestPgxTx(t testing.TB, ctx context.Context, db *pgxpool.Pool) pgx.Tx {
+	t.Helper()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("can't begin Postgres transaction: %v", err)
+	}
+	t.Cleanup(func() {
+		rollbackErr := tx.Rollback(ctx)
+		if rollbackErr != nil {
+			t.Errorf("didn't rollback Postgres transaction: %v", err)
+		}
+	})
+
+	return tx
 }
