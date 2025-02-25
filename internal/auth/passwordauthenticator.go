@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"errors"
-	"log/slog"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgerrcode"
@@ -27,16 +26,6 @@ type User struct {
 	Balance      int
 }
 
-type Transaction struct {
-	ID         uuid.UUID
-	FromUserID *uuid.UUID
-	ToUserID   *uuid.UUID
-	Amount     int
-
-	FromUsername *string
-	ToUsername   *string
-}
-
 // Data represents authenticated data.
 type Data struct {
 	UserID uuid.UUID
@@ -52,48 +41,32 @@ func NewPasswordAuthenticator(db *pgxpool.Pool, passwordHasher *PasswordHasher) 
 }
 
 func (pa *PasswordAuthenticator) AuthenticatePassword(ctx context.Context, username, password string) (*Data, error) {
-	// HACK: Race condition.
 	user, err := getUserByUsername(ctx, pa.db, username)
-	if err == nil {
+	switch {
+	case err == nil:
 		err = pa.passwordHasher.Verify(password, user.PasswordHash)
 		if err != nil {
 			return nil, err
 		}
-	} else if errors.Is(err, ErrUserNotExist) {
-		tx, err := pa.db.Begin(ctx)
+	case errors.Is(err, ErrUserNotExist):
+		var passwordHash string
+		passwordHash, err = pa.passwordHasher.Hash(password)
 		if err != nil {
 			return nil, err
 		}
-		defer func() {
-			err = tx.Rollback(ctx)
-			if err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-				slog.Error("didn't rollback", "err", err)
+		user, err = createUser(ctx, pa.db, username, passwordHash, InitialBalance)
+		if errors.Is(err, ErrUserExist) {
+			// When two callers try to authenticate under the same username for
+			// the first time, both of them can fail getUserByUsername with
+			// ErrUserNotExist but only one of them can succeed createUser.
+			user, err = getUserByUsername(ctx, pa.db, username)
+			if err != nil {
+				return nil, err
 			}
-		}()
-
-		passwordHash, err := pa.passwordHasher.Hash(password)
-		if err != nil {
+		} else if err != nil {
 			return nil, err
 		}
-
-		user, err = createUser(ctx, tx, username, passwordHash)
-		if err != nil {
-			return nil, err
-		}
-		user, err = updateUserBalance(ctx, tx, user.ID, InitialBalance)
-		if err != nil {
-			return nil, err
-		}
-		_, err = createTransaction(ctx, tx, nil, &user.ID, InitialBalance)
-		if err != nil {
-			return nil, err
-		}
-
-		err = tx.Commit(ctx)
-		if err != nil {
-			return nil, err
-		}
-	} else {
+	default:
 		return nil, err
 	}
 	return &Data{UserID: user.ID}, nil
@@ -107,13 +80,13 @@ type pgxExecutor interface {
 	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
 }
 
-func createUser(ctx context.Context, db pgxExecutor, username string, passwordHash string) (*User, error) {
+func createUser(ctx context.Context, db pgxExecutor, username string, passwordHash string, balance int) (*User, error) {
 	query := `
-		INSERT INTO users (username, password_hash)
-		VALUES ($1, $2)
+		INSERT INTO users (username, password_hash, balance)
+		VALUES ($1, $2, $3)
 		RETURNING id, username, password_hash, balance
 	`
-	args := []any{username, passwordHash}
+	args := []any{username, passwordHash, balance}
 
 	rows, _ := db.Query(ctx, query, args...)
 	user, err := pgx.CollectExactlyOneRow(rows, rowToUser)
@@ -148,44 +121,6 @@ func getUserByUsername(ctx context.Context, db pgxExecutor, username string) (*U
 	return user, nil
 }
 
-func updateUserBalance(ctx context.Context, db pgxExecutor, id uuid.UUID, balance int) (*User, error) {
-	query := `
-		UPDATE users
-		SET balance = $2
-		WHERE id = $1
-		RETURNING id, username, password_hash, balance
-	`
-	args := []any{id, balance}
-
-	rows, _ := db.Query(ctx, query, args...)
-	user, err := pgx.CollectExactlyOneRow(rows, rowToUser)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrUserNotExist
-		}
-		return nil, err
-	}
-
-	return user, nil
-}
-
-func createTransaction(ctx context.Context, db pgxExecutor, fromUserID, toUserID *uuid.UUID, amount int) (*Transaction, error) {
-	query := `
-		INSERT INTO transactions (from_user_id, to_user_id, amount)
-		VALUES ($1, $2, $3)
-		RETURNING id, from_user_id, to_user_id, amount
-	`
-	args := []any{fromUserID, toUserID, amount}
-
-	rows, _ := db.Query(ctx, query, args...)
-	transaction, err := pgx.CollectExactlyOneRow(rows, rowToTransaction)
-	if err != nil {
-		return nil, err
-	}
-
-	return transaction, nil
-}
-
 func rowToUser(collectable pgx.CollectableRow) (*User, error) {
 	type row struct {
 		ID           uuid.UUID `db:"id"`
@@ -204,26 +139,5 @@ func rowToUser(collectable pgx.CollectableRow) (*User, error) {
 		Username:     collected.Username,
 		PasswordHash: collected.PasswordHash,
 		Balance:      collected.Balance,
-	}, nil
-}
-
-func rowToTransaction(collectable pgx.CollectableRow) (*Transaction, error) {
-	type row struct {
-		ID         uuid.UUID  `db:"id"`
-		FromUserID *uuid.UUID `db:"from_user_id"`
-		ToUserID   *uuid.UUID `db:"to_user_id"`
-		Amount     int        `db:"amount"`
-	}
-
-	collected, err := pgx.RowToStructByName[row](collectable)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Transaction{
-		ID:         collected.ID,
-		FromUserID: collected.FromUserID,
-		ToUserID:   collected.ToUserID,
-		Amount:     collected.Amount,
 	}, nil
 }
