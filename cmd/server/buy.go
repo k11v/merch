@@ -8,6 +8,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/k11v/merch/api/merch"
+	"github.com/k11v/merch/internal/coin"
+	"github.com/k11v/merch/internal/item"
 	"github.com/k11v/merch/internal/purchase"
 )
 
@@ -25,13 +27,13 @@ func (h *Handler) GetAPIBuyItem(ctx context.Context, request merch.GetAPIBuyItem
 	}
 
 	purchaser := purchase.NewPurchaser(h.db)
-	err := purchaser.PurchaseByName(ctx, itemName, userID)
+	_, err := purchaser.PurchaseByName(ctx, itemName, userID)
 	if err != nil {
-		if errors.Is(err, purchase.ErrItemNotExist) {
+		if errors.Is(err, item.ErrNotExist) {
 			errors := "item does not exist"
 			return merch.GetAPIBuyItem400JSONResponse{Errors: &errors}, nil
 		}
-		if errors.Is(err, purchase.ErrCoinNotEnough) {
+		if errors.Is(err, coin.ErrNotEnough) {
 			errors := "not enough coin"
 			return merch.GetAPIBuyItem400JSONResponse{Errors: &errors}, nil
 		}

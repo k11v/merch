@@ -8,7 +8,7 @@ import (
 
 	"github.com/k11v/merch/api/merch"
 	"github.com/k11v/merch/internal/coin"
-	"github.com/k11v/merch/internal/item"
+	"github.com/k11v/merch/internal/purchase"
 	"github.com/k11v/merch/internal/transfer"
 )
 
@@ -19,8 +19,8 @@ func (h *Handler) GetAPIInfo(ctx context.Context, request merch.GetAPIInfoReques
 		panic(fmt.Errorf("can't get %s context value", ContextValueUserID))
 	}
 
-	itemGetter := item.NewGetter(h.db)
-	userItemCounts, err := itemGetter.GetUserItemCountsByUserID(ctx, userID)
+	purchaseGetter := purchase.NewGetter(h.db)
+	itemCounts, err := purchaseGetter.GetItemCountsByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -68,11 +68,11 @@ func (h *Handler) GetAPIInfo(ctx context.Context, request merch.GetAPIInfoReques
 		Quantity *int    `json:"quantity,omitempty"`
 		Type     *string `json:"type,omitempty"`
 	}
-	inventory := make([]inventoryItem, len(userItemCounts))
-	for i, userItem := range userItemCounts {
+	inventory := make([]inventoryItem, len(itemCounts))
+	for i, ic := range itemCounts {
 		inventory[i] = inventoryItem{
-			Quantity: &userItem.Count,
-			Type:     &userItem.ItemName,
+			Quantity: &ic.Count,
+			Type:     &ic.ItemName,
 		}
 	}
 

@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/k11v/merch/api/merch"
+	"github.com/k11v/merch/internal/coin"
 	"github.com/k11v/merch/internal/transfer"
 )
 
@@ -43,7 +44,7 @@ func (h *Handler) PostAPISendCoin(ctx context.Context, request merch.PostAPISend
 			errors := "fromUser and toUser are equal"
 			return merch.PostAPISendCoin400JSONResponse{Errors: &errors}, nil
 		}
-		if errors.Is(err, transfer.ErrCoinNotEnough) {
+		if errors.Is(err, coin.ErrNotEnough) {
 			errors := "not enough coins"
 			return merch.PostAPISendCoin400JSONResponse{Errors: &errors}, nil
 		}
