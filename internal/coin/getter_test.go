@@ -17,9 +17,13 @@ func TestGetter(t *testing.T) {
 			g     = NewGetter(db)
 		)
 
-		_, err := g.GetBalance(ctx, alice.ID)
+		balance, err := g.GetBalance(ctx, alice.ID)
 		if err != nil {
 			t.Fatalf("got %v error", err)
+		}
+
+		if got, want := balance, alice.Balance; got != want {
+			t.Fatalf("got %d balance, want %d", got, want)
 		}
 	})
 }
