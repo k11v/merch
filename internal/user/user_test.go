@@ -13,7 +13,7 @@ func Test(t *testing.T) {
 		db  = apptest.NewPostgresPool(t, ctx)
 	)
 
-	t.Run("creates and gets user with initial balance", func(t *testing.T) {
+	t.Run("creates and gets user with default balance", func(t *testing.T) {
 		var (
 			tx = apptest.BeginPostgresTx(t, ctx, db)
 			ph = NewPasswordHasher(DefaultArgon2IDParams())
@@ -31,7 +31,7 @@ func Test(t *testing.T) {
 			t.Fatalf("got %v error", err)
 		}
 
-		if got, want := u.Balance, InitialBalance; got != want {
+		if got, want := u.Balance, DefaultBalance; got != want {
 			t.Fatalf("got %d balance, want %d", got, want)
 		}
 	})
