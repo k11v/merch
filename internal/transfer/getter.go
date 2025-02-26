@@ -2,6 +2,8 @@ package transfer
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -11,6 +13,8 @@ import (
 )
 
 type Transfer struct {
+	ID        uuid.UUID
+	CreatedAt time.Time
 	DstUserID uuid.UUID
 	SrcUserID uuid.UUID
 	Amount    int
@@ -27,68 +31,59 @@ func NewGetter(db *pgxpool.Pool) *Getter {
 	return &Getter{db: db}
 }
 
-func (g *Getter) GetTransfersByUserID(ctx context.Context, userID uuid.UUID) ([]*Transfer, error) {
-	transactions, err := getTransactionsByUserID(ctx, g.db, userID)
+func (g *Getter) GetTransfersByUserID(ctx context.Context, userID uuid.UUID) ([]Transfer, error) {
+	transfers, err := getTransfersByUserID(ctx, g.db, userID)
 	if err != nil {
-		return nil, err
-	}
-	transfers := make([]*Transfer, 0)
-	for _, t := range transactions {
-		if t.ToUserID == nil || t.FromUserID == nil {
-			continue
-		}
-		transfers = append(transfers, &Transfer{
-			DstUserID:   *t.ToUserID,
-			SrcUserID:   *t.FromUserID,
-			Amount:      t.Amount,
-			DstUsername: *t.ToUsername,
-			SrcUsername: *t.FromUsername,
-		})
+		return nil, fmt.Errorf("transfer.Getter: %w", err)
 	}
 	return transfers, nil
 }
 
-func getTransactionsByUserID(ctx context.Context, db app.PgxExecutor, userID uuid.UUID) ([]*Transaction, error) {
+func getTransfersByUserID(ctx context.Context, db app.PgxExecutor, userID uuid.UUID) ([]Transfer, error) {
 	query := `
-		SELECT t.id, t.from_user_id, from_u.username as from_username, t.to_user_id, to_u.username as to_username, t.amount
-		FROM transactions t
-		LEFT JOIN users from_u ON t.from_user_id = from_u.id
-		LEFT JOIN users to_u ON t.to_user_id = to_u.id
-		WHERE t.from_user_id = $1 OR t.to_user_id = $1
+		SELECT t.id, t.created_at, t.dst_user_id, t.src_user_id, t.amount,
+			   dst_u.username as dst_username,
+			   src_u.username as src_username
+		FROM transfers t
+		LEFT JOIN users dst_u ON t.dst_user_id = dst_u.id
+		LEFT JOIN users src_u ON t.src_user_id = src_u.id
+		WHERE t.dst_user_id = $1 OR t.src_user_id = $1
 	`
 	args := []any{userID}
 
 	rows, _ := db.Query(ctx, query, args...)
-	transactions, err := pgx.CollectRows(rows, rowToTransactionWithUsernames)
+	transfers, err := pgx.CollectRows(rows, rowToTransferWithUsernames)
 	if err != nil {
 		return nil, err
 	}
 
-	return transactions, nil
+	return transfers, nil
 }
 
-func rowToTransactionWithUsernames(collectable pgx.CollectableRow) (*Transaction, error) {
+func rowToTransferWithUsernames(collectable pgx.CollectableRow) (Transfer, error) {
 	type row struct {
-		ID         uuid.UUID  `db:"id"`
-		FromUserID *uuid.UUID `db:"from_user_id"`
-		ToUserID   *uuid.UUID `db:"to_user_id"`
-		Amount     int        `db:"amount"`
+		ID        uuid.UUID `db:"id"`
+		CreatedAt time.Time `db:"created_at"`
+		DstUserID uuid.UUID `db:"dst_user_id"`
+		SrcUserID uuid.UUID `db:"src_user_id"`
+		Amount    int       `db:"amount"`
 
-		FromUsername *string `db:"from_username"`
-		ToUsername   *string `db:"to_username"`
+		DstUsername string `db:"dst_username"`
+		SrcUsername string `db:"src_username"`
 	}
 
 	collected, err := pgx.RowToStructByName[row](collectable)
 	if err != nil {
-		return nil, err
+		return Transfer{}, err
 	}
 
-	return &Transaction{
-		ID:           collected.ID,
-		FromUserID:   collected.FromUserID,
-		ToUserID:     collected.ToUserID,
-		Amount:       collected.Amount,
-		FromUsername: collected.FromUsername,
-		ToUsername:   collected.ToUsername,
+	return Transfer{
+		ID:          collected.ID,
+		CreatedAt:   collected.CreatedAt,
+		DstUserID:   collected.DstUserID,
+		SrcUserID:   collected.SrcUserID,
+		Amount:      collected.Amount,
+		DstUsername: collected.DstUsername,
+		SrcUsername: collected.SrcUsername,
 	}, nil
 }
