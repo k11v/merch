@@ -8,6 +8,8 @@ import (
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/k11v/merch/internal/app"
 )
 
 const InitialBalance = 1000
@@ -30,20 +32,12 @@ type Data struct {
 	UserID uuid.UUID
 }
 
-type pgxExecutor interface {
-	Begin(ctx context.Context) (pgx.Tx, error)
-	Exec(ctx context.Context, sql string, arguments ...any) (commandTag pgconn.CommandTag, err error)
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
-}
-
 type PasswordAuthenticator struct {
-	db             pgxExecutor
+	db             app.PgxExecutor
 	passwordHasher *PasswordHasher
 }
 
-func NewPasswordAuthenticator(db pgxExecutor, passwordHasher *PasswordHasher) *PasswordAuthenticator {
+func NewPasswordAuthenticator(db app.PgxExecutor, passwordHasher *PasswordHasher) *PasswordAuthenticator {
 	return &PasswordAuthenticator{db: db, passwordHasher: passwordHasher}
 }
 
@@ -79,7 +73,7 @@ func (pa *PasswordAuthenticator) AuthenticatePassword(ctx context.Context, usern
 	return &Data{UserID: user.ID}, nil
 }
 
-func createUser(ctx context.Context, db pgxExecutor, username string, passwordHash string, balance int) (*User, error) {
+func createUser(ctx context.Context, db app.PgxExecutor, username string, passwordHash string, balance int) (*User, error) {
 	query := `
 		INSERT INTO users (username, password_hash, balance)
 		VALUES ($1, $2, $3)
@@ -100,7 +94,7 @@ func createUser(ctx context.Context, db pgxExecutor, username string, passwordHa
 	return user, nil
 }
 
-func getUserByUsername(ctx context.Context, db pgxExecutor, username string) (*User, error) {
+func getUserByUsername(ctx context.Context, db app.PgxExecutor, username string) (*User, error) {
 	query := `
 		SELECT id, username, password_hash, balance
 		FROM users

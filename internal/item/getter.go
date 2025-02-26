@@ -5,8 +5,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/k11v/merch/internal/app"
 )
 
 type UserItemCount struct {
@@ -22,14 +23,6 @@ type UserItem struct {
 	ItemID   uuid.UUID
 	ItemName string
 	Amount   int
-}
-
-type pgxExecutor interface {
-	Begin(ctx context.Context) (pgx.Tx, error)
-	Exec(ctx context.Context, sql string, arguments ...any) (commandTag pgconn.CommandTag, err error)
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
 }
 
 type Getter struct {
@@ -57,7 +50,7 @@ func (g *Getter) GetUserItemCountsByUserID(ctx context.Context, userID uuid.UUID
 	return userItemCounts, nil
 }
 
-func getUserItems(ctx context.Context, db pgxExecutor, userID uuid.UUID) ([]*UserItem, error) {
+func getUserItems(ctx context.Context, db app.PgxExecutor, userID uuid.UUID) ([]*UserItem, error) {
 	query := `
 		SELECT ui.user_id, ui.item_id, i.name AS item_name, ui.amount
 		FROM users_items ui

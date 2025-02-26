@@ -8,8 +8,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/k11v/merch/internal/app"
 )
 
 type User struct {
@@ -17,14 +18,6 @@ type User struct {
 	Username     string
 	PasswordHash string
 	Balance      int
-}
-
-type pgxExecutor interface {
-	Begin(ctx context.Context) (pgx.Tx, error)
-	Exec(ctx context.Context, sql string, arguments ...any) (commandTag pgconn.CommandTag, err error)
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
 }
 
 var (
@@ -117,7 +110,7 @@ func (t *Transferer) TransferByUsername(ctx context.Context, dstUsername string,
 	return nil
 }
 
-func getUserByUsername(ctx context.Context, db pgxExecutor, username string) (*User, error) {
+func getUserByUsername(ctx context.Context, db app.PgxExecutor, username string) (*User, error) {
 	query := `
 		SELECT id, username, password_hash, balance
 		FROM users
@@ -137,7 +130,7 @@ func getUserByUsername(ctx context.Context, db pgxExecutor, username string) (*U
 	return user, nil
 }
 
-func getUsersByIDsForUpdate(ctx context.Context, db pgxExecutor, ids ...uuid.UUID) (map[uuid.UUID]*User, error) {
+func getUsersByIDsForUpdate(ctx context.Context, db app.PgxExecutor, ids ...uuid.UUID) (map[uuid.UUID]*User, error) {
 	query := `
 		SELECT id, username, password_hash, balance
 		FROM users
@@ -167,7 +160,7 @@ func getUsersByIDsForUpdate(ctx context.Context, db pgxExecutor, ids ...uuid.UUI
 	return usersMap, nil
 }
 
-func updateUserBalance(ctx context.Context, db pgxExecutor, id uuid.UUID, balance int) (*User, error) {
+func updateUserBalance(ctx context.Context, db app.PgxExecutor, id uuid.UUID, balance int) (*User, error) {
 	query := `
 		UPDATE users
 		SET balance = $2
@@ -188,7 +181,7 @@ func updateUserBalance(ctx context.Context, db pgxExecutor, id uuid.UUID, balanc
 	return user, nil
 }
 
-func createTransaction(ctx context.Context, db pgxExecutor, fromUserID, toUserID *uuid.UUID, amount int) (*Transaction, error) {
+func createTransaction(ctx context.Context, db app.PgxExecutor, fromUserID, toUserID *uuid.UUID, amount int) (*Transaction, error) {
 	query := `
 		INSERT INTO transactions (from_user_id, to_user_id, amount)
 		VALUES ($1, $2, $3)
