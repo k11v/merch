@@ -27,37 +27,37 @@ func (ta *TokenAuthenticator) AuthenticateToken(token string) (*Data, error) {
 		jwt.WithValidMethods([]string{jwt.SigningMethodEdDSA.Alg()}),
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("auth.TokenAuthenticator: %w", err)
 	}
 	claims, ok := jwtToken.Claims.(*jwt.RegisteredClaims)
 	if !ok {
-		return nil, errors.New("invalid claims type")
+		return nil, errors.New("auth.TokenAuthenticator: invalid claims type")
 	}
 
 	if claims.Subject == "" {
-		return nil, errors.New("empty sub token claim")
+		return nil, errors.New("auth.TokenAuthenticator: empty sub token claim")
 	}
 	userID, err := uuid.Parse(claims.Subject)
 	if err != nil {
-		return nil, fmt.Errorf("sub token claim: %w", err)
+		return nil, fmt.Errorf("auth.TokenAuthenticator: sub token claim: %w", err)
 	}
 
 	if claims.ExpiresAt == nil {
-		return nil, errors.New("empty exp token claim")
+		return nil, errors.New("auth.TokenAuthenticator: empty exp token claim")
 	}
 	_ = claims.ExpiresAt.Time
 
 	if claims.IssuedAt == nil {
-		return nil, errors.New("empty iat token claim")
+		return nil, errors.New("auth.TokenAuthenticator: empty iat token claim")
 	}
 	_ = claims.IssuedAt.Time
 
 	if claims.ID == "" {
-		return nil, errors.New("empty jti token claim")
+		return nil, errors.New("auth.TokenAuthenticator: empty jti token claim")
 	}
 	_, err = uuid.Parse(claims.ID)
 	if err != nil {
-		return nil, fmt.Errorf("jti token claim: %w", err)
+		return nil, fmt.Errorf("auth.TokenAuthenticator: jti token claim: %w", err)
 	}
 
 	return &Data{UserID: userID}, nil
