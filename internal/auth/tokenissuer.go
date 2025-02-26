@@ -30,7 +30,7 @@ func (ti *TokenIssuer) IssueToken(userID uuid.UUID) (string, error) {
 	unsigned := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	signed, err := unsigned.SignedString(ti.jwtSignatureKey)
 	if err != nil {
-		return "", fmt.Errorf("TokenIssuer: %w", err)
+		return "", fmt.Errorf("auth.TokenIssuer: %w", err)
 	}
-	return signed, err
+	return signed, nil
 }

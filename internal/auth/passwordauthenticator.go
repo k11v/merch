@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
 
@@ -40,9 +41,9 @@ func (pa *PasswordAuthenticator) AuthenticatePassword(ctx context.Context, usern
 		err = pa.ph.Verify(password, u.PasswordHash)
 		if err != nil {
 			if errors.Is(err, user.ErrPasswordNotMatch) {
-				return nil, ErrInvalidUsernameOrPassword
+				return nil, fmt.Errorf("auth.PasswordAuthenticator: %w", ErrInvalidUsernameOrPassword)
 			}
-			return nil, err
+			return nil, fmt.Errorf("auth.PasswordAuthenticator: %w", err)
 		}
 	case errors.Is(err, user.ErrNotExist):
 		u, err = user.NewCreator(pa.db, pa.ph).CreateUser(ctx, username, password)
@@ -52,13 +53,13 @@ func (pa *PasswordAuthenticator) AuthenticatePassword(ctx context.Context, usern
 			// ErrNotExist but only one of them can succeed CreateUser.
 			u, err = user.NewGetter(pa.db).GetUserByUsername(ctx, username)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("auth.PasswordAuthenticator: %w", err)
 			}
 		} else if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("auth.PasswordAuthenticator: %w", err)
 		}
 	default:
-		return nil, err
+		return nil, fmt.Errorf("auth.PasswordAuthenticator: %w", err)
 	}
 	return &Data{UserID: u.ID}, nil
 }
