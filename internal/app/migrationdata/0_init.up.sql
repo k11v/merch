@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS transfers (
     FOREIGN KEY (src_user_id) REFERENCES users (id),
     CONSTRAINT transfers_amount_ge_0 CHECK (amount >= 0)
 );
+CREATE INDEX IF NOT EXISTS transfers_created_at_id_idx ON transfers (created_at);
 CREATE INDEX IF NOT EXISTS transfers_dst_user_id_idx ON transfers (dst_user_id);
 CREATE INDEX IF NOT EXISTS transfers_src_user_id_idx ON transfers (src_user_id);
 

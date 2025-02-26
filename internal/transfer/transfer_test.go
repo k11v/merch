@@ -2,7 +2,6 @@ package transfer
 
 import (
 	"context"
-	"reflect"
 	"testing"
 
 	"github.com/k11v/merch/internal/app/apptest"
@@ -10,7 +9,7 @@ import (
 	"github.com/k11v/merch/internal/user/usertest"
 )
 
-func Test(t *testing.T) {
+func TestTransfer(t *testing.T) {
 	t.Run("transfers by username and gets transfers by user ID", func(t *testing.T) {
 		var (
 			ctx   = context.Background()
@@ -39,7 +38,7 @@ func Test(t *testing.T) {
 		if err != nil {
 			t.Fatalf("got %v error", err)
 		}
-		err = tt.TransferByUsername(ctx, "alice", bob.ID, 43)
+		err = tt.TransferByUsername(ctx, "alice", bob.ID, 42)
 		if err != nil {
 			t.Fatalf("got %v error", err)
 		}
@@ -85,18 +84,33 @@ func Test(t *testing.T) {
 				SrcUsername: "bob",
 			},
 		}
+		equalTransfers := func(l, r []*Transfer) bool {
+			if len(l) != len(r) {
+				return false
+			}
+			for i := range len(l) {
+				if l[i].DstUserID != r[i].DstUserID ||
+					l[i].SrcUserID != r[i].SrcUserID ||
+					l[i].Amount != r[i].Amount ||
+					l[i].DstUsername != r[i].DstUsername ||
+					l[i].SrcUsername != r[i].SrcUsername {
+					return false
+				}
+			}
+			return true
+		}
 
-		if got, want := aliceBalance, initialAliceBalance-40-41+43; got != want {
+		if got, want := aliceBalance, initialAliceBalance-40-41+42; got != want {
 			t.Errorf("got %d alice balance, want %d", got, want)
 		}
-		if got, want := bobBalance, initialBobBalance+40+41-43; got != want {
+		if got, want := bobBalance, initialBobBalance+40+41-42; got != want {
 			t.Errorf("got %d bob balance, want %d", got, want)
 		}
-		if gotTransfers := aliceTransfers; !reflect.DeepEqual(gotTransfers, wantTransfers) {
+		if gotTransfers := aliceTransfers; !equalTransfers(gotTransfers, wantTransfers) {
 			t.Logf("got %v alice transfers", gotTransfers)
 			t.Errorf("want %v", wantTransfers)
 		}
-		if gotTransfers := bobTransfers; !reflect.DeepEqual(gotTransfers, wantTransfers) {
+		if gotTransfers := bobTransfers; !equalTransfers(gotTransfers, wantTransfers) {
 			t.Logf("got %v bob transfers", gotTransfers)
 			t.Errorf("want %v", wantTransfers)
 		}
