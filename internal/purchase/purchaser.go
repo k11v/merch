@@ -8,8 +8,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/k11v/merch/internal/app"
 )
 
 var (
@@ -46,14 +47,6 @@ type UserItem struct {
 	ItemID   uuid.UUID
 	ItemName string
 	Amount   int
-}
-
-type pgxExecutor interface {
-	Begin(ctx context.Context) (pgx.Tx, error)
-	Exec(ctx context.Context, sql string, arguments ...any) (commandTag pgconn.CommandTag, err error)
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
 }
 
 type Purchaser struct {
@@ -115,7 +108,7 @@ func (h *Purchaser) PurchaseByName(ctx context.Context, itemName string, userID 
 	return nil
 }
 
-func getItemByName(ctx context.Context, db pgxExecutor, name string) (*Item, error) {
+func getItemByName(ctx context.Context, db app.PgxExecutor, name string) (*Item, error) {
 	query := `
 		SELECT id, name, price
 		FROM items
@@ -135,7 +128,7 @@ func getItemByName(ctx context.Context, db pgxExecutor, name string) (*Item, err
 	return item, nil
 }
 
-func getUserForUpdate(ctx context.Context, db pgxExecutor, id uuid.UUID) (*User, error) {
+func getUserForUpdate(ctx context.Context, db app.PgxExecutor, id uuid.UUID) (*User, error) {
 	query := `
 		SELECT id, username, password_hash, balance
 		FROM users
@@ -156,7 +149,7 @@ func getUserForUpdate(ctx context.Context, db pgxExecutor, id uuid.UUID) (*User,
 	return user, nil
 }
 
-func updateUserBalance(ctx context.Context, db pgxExecutor, id uuid.UUID, balance int) (*User, error) {
+func updateUserBalance(ctx context.Context, db app.PgxExecutor, id uuid.UUID, balance int) (*User, error) {
 	query := `
 		UPDATE users
 		SET balance = $2
@@ -177,7 +170,7 @@ func updateUserBalance(ctx context.Context, db pgxExecutor, id uuid.UUID, balanc
 	return user, nil
 }
 
-func addUserItemAmount(ctx context.Context, db pgxExecutor, userID, itemID uuid.UUID, amount int) (*UserItem, error) {
+func addUserItemAmount(ctx context.Context, db app.PgxExecutor, userID, itemID uuid.UUID, amount int) (*UserItem, error) {
 	query := `
 		INSERT INTO users_items (user_id, item_id, amount)
 		VALUES ($1, $2, $3)
@@ -199,7 +192,7 @@ func addUserItemAmount(ctx context.Context, db pgxExecutor, userID, itemID uuid.
 	return userItem, nil
 }
 
-func createTransaction(ctx context.Context, db pgxExecutor, fromUserID, toUserID *uuid.UUID, amount int) (*Transaction, error) {
+func createTransaction(ctx context.Context, db app.PgxExecutor, fromUserID, toUserID *uuid.UUID, amount int) (*Transaction, error) {
 	query := `
 		INSERT INTO transactions (from_user_id, to_user_id, amount)
 		VALUES ($1, $2, $3)

@@ -6,6 +6,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/k11v/merch/internal/app"
 )
 
 type Transfer struct {
@@ -46,7 +48,7 @@ func (g *Getter) GetTransfersByUserID(ctx context.Context, userID uuid.UUID) ([]
 	return transfers, nil
 }
 
-func getTransactionsByUserID(ctx context.Context, db pgxExecutor, userID uuid.UUID) ([]*Transaction, error) {
+func getTransactionsByUserID(ctx context.Context, db app.PgxExecutor, userID uuid.UUID) ([]*Transaction, error) {
 	query := `
 		SELECT t.id, t.from_user_id, from_u.username as from_username, t.to_user_id, to_u.username as to_username, t.amount
 		FROM transactions t

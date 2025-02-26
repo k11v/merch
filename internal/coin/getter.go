@@ -6,7 +6,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/k11v/merch/internal/app"
 )
 
 var ErrUserNotExist = errors.New("user does not exist")
@@ -18,19 +19,11 @@ type User struct {
 	Balance      int
 }
 
-type pgxExecutor interface {
-	Begin(ctx context.Context) (pgx.Tx, error)
-	Exec(ctx context.Context, sql string, arguments ...any) (commandTag pgconn.CommandTag, err error)
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
-}
-
 type Getter struct {
-	db pgxExecutor
+	db app.PgxExecutor
 }
 
-func NewGetter(db pgxExecutor) *Getter {
+func NewGetter(db app.PgxExecutor) *Getter {
 	return &Getter{db: db}
 }
 
@@ -42,7 +35,7 @@ func (g *Getter) GetBalance(ctx context.Context, userID uuid.UUID) (int, error) 
 	return user.Balance, nil
 }
 
-func getUser(ctx context.Context, db pgxExecutor, id uuid.UUID) (*User, error) {
+func getUser(ctx context.Context, db app.PgxExecutor, id uuid.UUID) (*User, error) {
 	query := `
 		SELECT id, username, password_hash, balance
 		FROM users
