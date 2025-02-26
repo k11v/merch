@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -13,48 +14,48 @@ import (
 func SetupJWT(pubFile, privFile string) error {
 	pubExists, err := fileExists(pubFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("app.SetupJWT: %w", err)
 	}
 	privExists, err := fileExists(privFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("app.SetupJWT: %w", err)
 	}
 	if pubExists || privExists {
 		if pubExists && privExists {
 			return nil
 		}
-		return errors.New("only one of public and private key files exists")
+		return errors.New("app.SetupJWT: only one of public and private key files exists")
 	}
 
 	pub, priv, err := ed25519.GenerateKey(nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("app.SetupJWT: %w", err)
 	}
 	pubPEM, err := pemEncodeED25519PublicKey(pub)
 	if err != nil {
-		return err
+		return fmt.Errorf("app.SetupJWT: %w", err)
 	}
 	privPEM, err := pemEncodeED25519PrivateKey(priv)
 	if err != nil {
-		return err
+		return fmt.Errorf("app.SetupJWT: %w", err)
 	}
 
 	err = os.MkdirAll(filepath.Dir(pubFile), 0o700)
 	if err != nil {
-		return err
+		return fmt.Errorf("app.SetupJWT: %w", err)
 	}
 	err = os.WriteFile(pubFile, pubPEM, 0o600)
 	if err != nil {
-		return err
+		return fmt.Errorf("app.SetupJWT: %w", err)
 	}
 
 	err = os.MkdirAll(filepath.Dir(privFile), 0o700)
 	if err != nil {
-		return err
+		return fmt.Errorf("app.SetupJWT: %w", err)
 	}
 	err = os.WriteFile(privFile, privPEM, 0o600)
 	if err != nil {
-		return err
+		return fmt.Errorf("app.SetupJWT: %w", err)
 	}
 
 	return nil
