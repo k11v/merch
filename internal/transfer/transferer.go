@@ -11,32 +11,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/k11v/merch/internal/app"
+	"github.com/k11v/merch/internal/coin"
+	"github.com/k11v/merch/internal/user"
 )
-
-type User struct {
-	ID           uuid.UUID
-	Username     string
-	PasswordHash string
-	Balance      int
-}
-
-var (
-	ErrCoinNotEnough          = errors.New("not enough coin")
-	ErrDstUserNotFound        = errors.New("dst user not found")
-	ErrSrcUserAndDstUserEqual = errors.New("src user and dst user are equal")
-	ErrUserExist              = errors.New("user already exists")
-	ErrUserNotExist           = errors.New("user does not exist")
-)
-
-type Transaction struct {
-	ID         uuid.UUID
-	FromUserID *uuid.UUID
-	ToUserID   *uuid.UUID
-	Amount     int
-
-	FromUsername *string
-	ToUsername   *string
-}
 
 type Transferer struct {
 	db *pgxpool.Pool
@@ -47,33 +24,33 @@ func NewTransferer(db *pgxpool.Pool) *Transferer {
 }
 
 func (t *Transferer) TransferByUsername(ctx context.Context, dstUsername string, srcUserID uuid.UUID, amount int) error {
-	dstUser, err := getUserByUsername(ctx, t.db, dstUsername)
+	dstUser, err := user.NewGetter(t.db).GetUserByUsername(ctx, dstUsername)
 	if err != nil {
-		if errors.Is(err, ErrUserNotExist) {
-			return fmt.Errorf("Transferer: %w", ErrDstUserNotFound)
+		if errors.Is(err, user.ErrNotExist) {
+			return fmt.Errorf("transfer.Transferer: %w", ErrDstUserNotFound)
 		}
-		return fmt.Errorf("Transferer: %w", err)
+		return fmt.Errorf("transfer.Transferer: %w", err)
 	}
 	dstUserID := dstUser.ID
 
 	if srcUserID == dstUserID {
-		return fmt.Errorf("Transferer: %w", ErrSrcUserAndDstUserEqual)
+		return fmt.Errorf("transfer.Transferer: %w", ErrSrcUserAndDstUserEqual)
 	}
 
 	tx, err := t.db.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("Transferer: %w", err)
+		return fmt.Errorf("transfer.Transferer: %w", err)
 	}
 	defer func() {
-		err = tx.Rollback(ctx)
-		if err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-			slog.Error("didn't rollback", "err", err)
+		rollbackErr := tx.Rollback(ctx)
+		if rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+			slog.Error("didn't rollback", "err", rollbackErr)
 		}
 	}()
 
 	usersMap, err := getUsersByIDsForUpdate(ctx, tx, srcUserID, dstUserID)
 	if err != nil {
-		return fmt.Errorf("Transferer: %w", err)
+		return fmt.Errorf("transfer.Transferer: %w", err)
 	}
 	srcUser := usersMap[srcUserID]
 	dstUser = usersMap[dstUserID]
@@ -81,56 +58,36 @@ func (t *Transferer) TransferByUsername(ctx context.Context, dstUsername string,
 	srcUserBalance := srcUser.Balance
 	srcUserBalance -= amount
 	if srcUserBalance < 0 {
-		return fmt.Errorf("Transferer: %w", ErrCoinNotEnough)
+		return fmt.Errorf("transfer.Transferer: %w", coin.ErrNotEnough)
 	}
 
 	dstUserBalance := dstUser.Balance
 	dstUserBalance += amount
 
+	_, err = createTransfer(ctx, tx, &dstUserID, &srcUserID, amount)
+	if err != nil {
+		return fmt.Errorf("transfer.Transferer: %w", err)
+	}
+
 	_, err = updateUserBalance(ctx, tx, srcUserID, srcUserBalance)
 	if err != nil {
-		return fmt.Errorf("Transferer: %w", err)
+		return fmt.Errorf("transfer.Transferer: %w", err)
 	}
 
 	_, err = updateUserBalance(ctx, tx, dstUserID, dstUserBalance)
 	if err != nil {
-		return fmt.Errorf("Transferer: %w", err)
-	}
-
-	_, err = createTransaction(ctx, tx, &srcUserID, &dstUserID, amount)
-	if err != nil {
-		return fmt.Errorf("Transferer: %w", err)
+		return fmt.Errorf("transfer.Transferer: %w", err)
 	}
 
 	err = tx.Commit(ctx)
 	if err != nil {
-		return fmt.Errorf("Transferer: %w", err)
+		return fmt.Errorf("transfer.Transferer: %w", err)
 	}
 
 	return nil
 }
 
-func getUserByUsername(ctx context.Context, db app.PgxExecutor, username string) (*User, error) {
-	query := `
-		SELECT id, username, password_hash, balance
-		FROM users
-		WHERE username = $1
-	`
-	args := []any{username}
-
-	rows, _ := db.Query(ctx, query, args...)
-	user, err := pgx.CollectExactlyOneRow(rows, rowToUser)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrUserNotExist
-		}
-		return nil, err
-	}
-
-	return user, nil
-}
-
-func getUsersByIDsForUpdate(ctx context.Context, db app.PgxExecutor, ids ...uuid.UUID) (map[uuid.UUID]*User, error) {
+func getUsersByIDsForUpdate(ctx context.Context, db app.PgxExecutor, ids ...uuid.UUID) (map[uuid.UUID]*user.User, error) {
 	query := `
 		SELECT id, username, password_hash, balance
 		FROM users
@@ -140,12 +97,12 @@ func getUsersByIDsForUpdate(ctx context.Context, db app.PgxExecutor, ids ...uuid
 	args := []any{ids}
 
 	rows, _ := db.Query(ctx, query, args...)
-	users, err := pgx.CollectRows(rows, rowToUser)
+	users, err := pgx.CollectRows(rows, user.RowToUser)
 	if err != nil {
 		return nil, err
 	}
 
-	usersMap := make(map[uuid.UUID]*User)
+	usersMap := make(map[uuid.UUID]*user.User)
 	for _, u := range users {
 		usersMap[u.ID] = u
 	}
@@ -153,14 +110,31 @@ func getUsersByIDsForUpdate(ctx context.Context, db app.PgxExecutor, ids ...uuid
 	for _, id := range ids {
 		_, ok := usersMap[id]
 		if !ok {
-			return nil, ErrUserNotExist
+			return nil, user.ErrNotExist
 		}
 	}
 
 	return usersMap, nil
 }
 
-func updateUserBalance(ctx context.Context, db app.PgxExecutor, id uuid.UUID, balance int) (*User, error) {
+func createTransfer(ctx context.Context, db app.PgxExecutor, dstUserID, srcUserID *uuid.UUID, amount int) (*Transfer, error) {
+	query := `
+		INSERT INTO transfers (dst_user_id, src_user_id, amount)
+		VALUES ($1, $2, $3)
+		RETURNING id, created_at, dst_user_id, src_user_id, amount
+	`
+	args := []any{dstUserID, srcUserID, amount}
+
+	rows, _ := db.Query(ctx, query, args...)
+	t, err := pgx.CollectExactlyOneRow(rows, RowToTransfer)
+	if err != nil {
+		return nil, err
+	}
+
+	return t, nil
+}
+
+func updateUserBalance(ctx context.Context, db app.PgxExecutor, id uuid.UUID, balance int) (*user.User, error) {
 	query := `
 		UPDATE users
 		SET balance = $2
@@ -170,72 +144,13 @@ func updateUserBalance(ctx context.Context, db app.PgxExecutor, id uuid.UUID, ba
 	args := []any{id, balance}
 
 	rows, _ := db.Query(ctx, query, args...)
-	user, err := pgx.CollectExactlyOneRow(rows, rowToUser)
+	u, err := pgx.CollectExactlyOneRow(rows, user.RowToUser)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrUserNotExist
+			return nil, user.ErrNotExist
 		}
 		return nil, err
 	}
 
-	return user, nil
-}
-
-func createTransaction(ctx context.Context, db app.PgxExecutor, fromUserID, toUserID *uuid.UUID, amount int) (*Transaction, error) {
-	query := `
-		INSERT INTO transactions (from_user_id, to_user_id, amount)
-		VALUES ($1, $2, $3)
-		RETURNING id, from_user_id, to_user_id, amount
-	`
-	args := []any{fromUserID, toUserID, amount}
-
-	rows, _ := db.Query(ctx, query, args...)
-	transaction, err := pgx.CollectExactlyOneRow(rows, rowToTransaction)
-	if err != nil {
-		return nil, err
-	}
-
-	return transaction, nil
-}
-
-func rowToUser(collectable pgx.CollectableRow) (*User, error) {
-	type row struct {
-		ID           uuid.UUID `db:"id"`
-		Username     string    `db:"username"`
-		PasswordHash string    `db:"password_hash"`
-		Balance      int       `db:"balance"`
-	}
-
-	collected, err := pgx.RowToStructByName[row](collectable)
-	if err != nil {
-		return nil, err
-	}
-
-	return &User{
-		ID:           collected.ID,
-		Username:     collected.Username,
-		PasswordHash: collected.PasswordHash,
-		Balance:      collected.Balance,
-	}, nil
-}
-
-func rowToTransaction(collectable pgx.CollectableRow) (*Transaction, error) {
-	type row struct {
-		ID         uuid.UUID  `db:"id"`
-		FromUserID *uuid.UUID `db:"from_user_id"`
-		ToUserID   *uuid.UUID `db:"to_user_id"`
-		Amount     int        `db:"amount"`
-	}
-
-	collected, err := pgx.RowToStructByName[row](collectable)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Transaction{
-		ID:         collected.ID,
-		FromUserID: collected.FromUserID,
-		ToUserID:   collected.ToUserID,
-		Amount:     collected.Amount,
-	}, nil
+	return u, nil
 }
