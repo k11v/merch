@@ -11,6 +11,7 @@ import (
 
 	"github.com/k11v/merch/api/merch"
 	"github.com/k11v/merch/internal/auth"
+	"github.com/k11v/merch/internal/user"
 )
 
 type ContextValue string
@@ -31,11 +32,11 @@ func (h *Handler) PostAPIAuth(ctx context.Context, request merch.PostAPIAuthRequ
 		return merch.PostAPIAuth400JSONResponse{Errors: &errors}, nil
 	}
 
-	passwordHasher := auth.NewPasswordHasher(auth.DefaultArgon2IDParams())
+	passwordHasher := user.NewPasswordHasher(user.DefaultArgon2IDParams())
 	passwordAuthenticator := auth.NewPasswordAuthenticator(h.db, passwordHasher)
 	authData, err := passwordAuthenticator.AuthenticatePassword(ctx, username, password)
 	if err != nil {
-		if errors.Is(err, auth.ErrPasswordNotMatch) {
+		if errors.Is(err, auth.ErrInvalidUsernameOrPassword) {
 			errors := "invalid username or password"
 			return merch.PostAPIAuth401JSONResponse{Errors: &errors}, nil
 		}
