@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/k11v/merch/internal/app/apptest"
+	"github.com/k11v/merch/internal/user"
 )
 
 func TestPasswordAuthenticator(t *testing.T) {
@@ -17,7 +18,7 @@ func TestPasswordAuthenticator(t *testing.T) {
 	t.Run("creates different users", func(t *testing.T) {
 		var (
 			tx = apptest.BeginPostgresTx(t, ctx, db)
-			ph = NewPasswordHasher(DefaultArgon2IDParams())
+			ph = user.NewPasswordHasher(user.DefaultArgon2IDParams())
 			pa = NewPasswordAuthenticator(tx, ph)
 		)
 
@@ -40,7 +41,7 @@ func TestPasswordAuthenticator(t *testing.T) {
 	t.Run("creates and gets user", func(t *testing.T) {
 		var (
 			tx = apptest.BeginPostgresTx(t, ctx, db)
-			ph = NewPasswordHasher(DefaultArgon2IDParams())
+			ph = user.NewPasswordHasher(user.DefaultArgon2IDParams())
 			pa = NewPasswordAuthenticator(tx, ph)
 		)
 
@@ -63,7 +64,7 @@ func TestPasswordAuthenticator(t *testing.T) {
 	t.Run("doesn't get user with different password", func(t *testing.T) {
 		var (
 			tx = apptest.BeginPostgresTx(t, ctx, db)
-			ph = NewPasswordHasher(DefaultArgon2IDParams())
+			ph = user.NewPasswordHasher(user.DefaultArgon2IDParams())
 			pa = NewPasswordAuthenticator(tx, ph)
 		)
 
@@ -73,31 +74,8 @@ func TestPasswordAuthenticator(t *testing.T) {
 		}
 
 		_, err = pa.AuthenticatePassword(ctx, "alice", "bob123")
-		if got, want := err, ErrPasswordNotMatch; !errors.Is(got, want) {
+		if got, want := err, ErrInvalidUsernameOrPassword; !errors.Is(got, want) {
 			t.Fatalf("got %v error, want %v", got, want)
-		}
-	})
-
-	t.Run("creates user with initial balance", func(t *testing.T) {
-		var (
-			tx = apptest.BeginPostgresTx(t, ctx, db)
-			ph = NewPasswordHasher(DefaultArgon2IDParams())
-			pa = NewPasswordAuthenticator(tx, ph)
-		)
-
-		_, err := pa.AuthenticatePassword(ctx, "alice", "alice123")
-		if err != nil {
-			t.Fatalf("got %v error", err)
-		}
-
-		// TODO: Find a public type/func to use instead.
-		user, err := getUserByUsername(ctx, tx, "alice")
-		if err != nil {
-			t.Fatalf("got %v error", err)
-		}
-
-		if got, want := user.Balance, InitialBalance; got != want {
-			t.Fatalf("got %d balance, want %d", got, want)
 		}
 	})
 }

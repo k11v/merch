@@ -1,4 +1,4 @@
-package auth
+package user
 
 import (
 	"crypto/rand"
@@ -12,6 +12,8 @@ import (
 
 	"golang.org/x/crypto/argon2"
 )
+
+var ErrPasswordNotMatch = errors.New("password does not match hash")
 
 type Argon2IDParams struct {
 	Memory      uint32
