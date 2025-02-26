@@ -7,7 +7,7 @@ import (
 	"github.com/k11v/merch/internal/app/apptest"
 )
 
-func Test(t *testing.T) {
+func TestUser(t *testing.T) {
 	var (
 		ctx = context.Background()
 		db  = apptest.NewPostgresPool(t, ctx)
