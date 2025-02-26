@@ -2,6 +2,7 @@ package coin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -9,6 +10,8 @@ import (
 	"github.com/k11v/merch/internal/app"
 	"github.com/k11v/merch/internal/user"
 )
+
+var ErrNotEnough = errors.New("not enough")
 
 type Getter struct {
 	db app.PgxExecutor
