@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"net/http"
+	"os"
 	"reflect"
 	"testing"
 
@@ -10,6 +11,10 @@ import (
 )
 
 func TestServer(t *testing.T) {
+	if os.Getenv("XGOTESTE2E") != "1" {
+		t.Skip("skipping test; use XGOTESTE2E=1 to unskip")
+	}
+
 	t.Run("allows to buy an item", func(t *testing.T) {
 		var (
 			ctx    = context.TODO()
