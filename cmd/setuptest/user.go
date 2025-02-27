@@ -17,7 +17,7 @@ type User struct {
 	Password string `json:"password"`
 }
 
-func CreateUsers(ctx context.Context, db app.PgxExecutor, count int) ([]*User, error) {
+func GenerateUsers(ctx context.Context, db app.PgxExecutor, count int) ([]*User, error) {
 	password := usertest.DefaultPassword
 
 	users := make([]*User, count)
@@ -31,7 +31,7 @@ func CreateUsers(ctx context.Context, db app.PgxExecutor, count int) ([]*User, e
 	passwordHasher := user.NewPasswordHasher(user.DefaultArgon2IDParams())
 	passwordHash, err := passwordHasher.Hash(password)
 	if err != nil {
-		return nil, fmt.Errorf("CreateUsers: %w", err)
+		return nil, fmt.Errorf("GenerateUsers: %w", err)
 	}
 
 	createUserParamsUsers := make([]*user.DataCreatorCreateUserParams, count)
@@ -46,16 +46,16 @@ func CreateUsers(ctx context.Context, db app.PgxExecutor, count int) ([]*User, e
 	dataCreator := user.NewDataCreator(db)
 	err = dataCreator.CreateUsers(ctx, createUserParamsUsers)
 	if err != nil {
-		return nil, fmt.Errorf("CreateUsers: %w", err)
+		return nil, fmt.Errorf("GenerateUsers: %w", err)
 	}
 
 	return users, nil
 }
 
-func WriteUsersFile(name string, users []*User) error {
+func WriteFileJSON(name string, v any) error {
 	f, err := os.Create(name)
 	if err != nil {
-		return fmt.Errorf("WriteUsersFile: %w", err)
+		return fmt.Errorf("WriteFileJSON: %w", err)
 	}
 	defer func() {
 		closeErr := f.Close()
@@ -64,9 +64,9 @@ func WriteUsersFile(name string, users []*User) error {
 		}
 	}()
 
-	err = json.NewEncoder(f).Encode(users)
+	err = json.NewEncoder(f).Encode(v)
 	if err != nil {
-		return fmt.Errorf("WriteUsersFile: %w", err)
+		return fmt.Errorf("WriteFileJSON: %w", err)
 	}
 
 	return nil
