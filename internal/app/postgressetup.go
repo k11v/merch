@@ -21,7 +21,12 @@ func SetupPostgres(url string) error {
 	}
 	defer db.Close()
 
-	return migratePostgresDB(db)
+	err = migratePostgresDB(db)
+	if err != nil {
+		return fmt.Errorf("app.SetupPostgres: %w", err)
+	}
+
+	return nil
 }
 
 func migratePostgresDB(db *sql.DB) error {
