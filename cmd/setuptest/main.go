@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -12,7 +13,10 @@ import (
 	"github.com/k11v/merch/internal/user/usertest"
 )
 
-var usersFlag = flag.Int("users", 0, "number of users to create")
+var (
+	usersFlag      = flag.Int("users", 0, "number of users to create")
+	writeUsersFlag = flag.String("writeusers", "", "write created users to JSON file")
+)
 
 func main() {
 	flag.Parse()
@@ -43,37 +47,79 @@ func run(postgresURL string) error {
 	}
 	defer db.Close()
 
+	var users []*User
 	if *usersFlag > 0 {
-		err = createUsers(ctx, db, *usersFlag)
+		users, err = createUsers(ctx, db, *usersFlag)
 		if err != nil {
 			return err
 		}
 		slog.Info("created users", "count", *usersFlag)
-	} else {
-		slog.Info("skipped user creation")
+	}
+
+	if *writeUsersFlag != "" {
+		err = writeUsersFile(*writeUsersFlag, users)
+		if err != nil {
+			return err
+		}
+		slog.Info("written users file", "name", *writeUsersFlag)
 	}
 
 	return nil
 }
 
-func createUsers(ctx context.Context, db app.PgxExecutor, count int) error {
-	passwordHasher := user.NewPasswordHasher(user.DefaultArgon2IDParams())
-	passwordHash, err := passwordHasher.Hash(usertest.DefaultPassword)
-	if err != nil {
-		return err
+type User struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+func createUsers(ctx context.Context, db app.PgxExecutor, count int) ([]*User, error) {
+	password := usertest.DefaultPassword
+
+	users := make([]*User, count)
+	for i := range len(users) {
+		users[i] = &User{
+			Username: fmt.Sprintf("u%d", i),
+			Password: password,
+		}
 	}
 
-	users := make([]*user.DataCreatorCreateUserParams, 0)
-	for i := range count {
-		users = append(users, &user.DataCreatorCreateUserParams{
-			Username:     fmt.Sprintf("u%d", i),
+	passwordHasher := user.NewPasswordHasher(user.DefaultArgon2IDParams())
+	passwordHash, err := passwordHasher.Hash(password)
+	if err != nil {
+		return nil, err
+	}
+
+	createUserParamsUsers := make([]*user.DataCreatorCreateUserParams, count)
+	for i, u := range users {
+		createUserParamsUsers[i] = &user.DataCreatorCreateUserParams{
+			Username:     u.Username,
 			PasswordHash: passwordHash,
 			Balance:      user.DefaultBalance,
-		})
+		}
 	}
 
 	dataCreator := user.NewDataCreator(db)
-	err = dataCreator.CreateUsers(ctx, users)
+	err = dataCreator.CreateUsers(ctx, createUserParamsUsers)
+	if err != nil {
+		return nil, err
+	}
+
+	return users, nil
+}
+
+func writeUsersFile(name string, users []*User) error {
+	f, err := os.Create(name)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		closeErr := f.Close()
+		if closeErr != nil {
+			slog.Error("didn't close file", "err", err)
+		}
+	}()
+
+	err = json.NewEncoder(f).Encode(users)
 	if err != nil {
 		return err
 	}
