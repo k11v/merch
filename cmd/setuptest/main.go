@@ -11,8 +11,10 @@ import (
 )
 
 var (
-	usersFlag      = flag.Int("users", 0, "number of users to create")
-	writeUsersFlag = flag.String("writeusers", "", "write created users to JSON file")
+	genUsersFlag   = flag.Int("genusers", 0, "number of users to generate")
+	writeUsersFlag = flag.String("writeusers", "", "write users to JSON file")
+	genAuthsFlag   = flag.Int("genauths", 0, "number of users to authenticate")
+	writeAuthsFlag = flag.String("writeauths", "", "write auth tokens to JSON file")
 )
 
 func main() {
@@ -26,7 +28,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	err := run(postgresURL)
+	const envJWTSignatureKeyFile = "APP_JWT_SIGNATURE_KEY_FILE"
+	jwtSignatureKeyFile := os.Getenv(envJWTSignatureKeyFile)
+	if jwtSignatureKeyFile == "" {
+		err := fmt.Errorf("%s env is empty", envJWTSignatureKeyFile)
+		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	err := run(postgresURL, jwtSignatureKeyFile)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -35,7 +45,7 @@ func main() {
 	os.Exit(0)
 }
 
-func run(postgresURL string) error {
+func run(postgresURL string, jwtSignatureKeyFile string) error {
 	ctx := context.Background()
 
 	db, err := app.NewPostgresPool(ctx, postgresURL)
@@ -44,21 +54,47 @@ func run(postgresURL string) error {
 	}
 	defer db.Close()
 
-	var users []*User
-	if *usersFlag > 0 {
-		users, err = CreateUsers(ctx, db, *usersFlag)
-		if err != nil {
-			return err
-		}
-		slog.Info("created users", "count", *usersFlag)
+	jwtSignatureKey, err := app.ReadFileED25519PrivateKey(jwtSignatureKeyFile)
+	if err != nil {
+		return err
 	}
 
-	if *writeUsersFlag != "" {
-		err = WriteUsersFile(*writeUsersFlag, users)
+	var users []*User
+	userCount := *genUsersFlag
+	if userCount > 0 {
+		users, err = GenerateUsers(ctx, db, userCount)
 		if err != nil {
 			return err
 		}
-		slog.Info("written users file", "name", *writeUsersFlag)
+		slog.Info("generated users", "count", userCount)
+	}
+
+	userFile := *writeUsersFlag
+	if userFile != "" {
+		err = WriteFileJSON(userFile, users)
+		if err != nil {
+			return err
+		}
+		slog.Info("written user file", "name", userFile)
+	}
+
+	var authTokens []*AuthToken
+	authTokenCount := *genAuthsFlag
+	if authTokenCount > 0 {
+		authTokens, err = GenerateAuthTokens(ctx, db, jwtSignatureKey, users, authTokenCount)
+		if err != nil {
+			return err
+		}
+		slog.Info("generated auth tokens", "count", authTokenCount)
+	}
+
+	authTokenFile := *writeAuthsFlag
+	if authTokenFile != "" {
+		err = WriteFileJSON(authTokenFile, authTokens)
+		if err != nil {
+			return err
+		}
+		slog.Info("written auth token file", "name", authTokenFile)
 	}
 
 	return nil
