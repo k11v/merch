@@ -25,6 +25,7 @@ services:
   setup:
     build: .
     entrypoint: ["setup"]
+    command: ["-app"]
     env_file:
       - example.env
     environment:
