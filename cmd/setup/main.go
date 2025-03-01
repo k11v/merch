@@ -1,13 +1,20 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
+	"strconv"
+)
 
-	"github.com/k11v/merch/internal/app"
+var (
+	appFlag     = flag.Bool("app", false, "set up app, including postgres and jwt")
+	apptestFlag = flag.Bool("apptest", false, "set up apptest, including user and auth")
 )
 
 func main() {
+	flag.Parse()
+
 	const envPostgresURL = "APP_POSTGRES_URL"
 	postgresURL := os.Getenv(envPostgresURL)
 	if postgresURL == "" {
@@ -32,15 +39,57 @@ func main() {
 		os.Exit(1)
 	}
 
-	err := app.SetupPostgres(postgresURL)
-	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+	const envTestUserFile = "APPTEST_USER_FILE"
+	testUserFile := os.Getenv(envTestUserFile)
+
+	const envTestUserCount = "APPTEST_USER_GENERATE_COUNT"
+	testUserCountEnv := os.Getenv(envTestUserCount)
+	testUserCount := 0
+	if testUserCountEnv != "" {
+		var err error
+		testUserCount, err = strconv.Atoi(testUserCountEnv)
+		if err != nil {
+			err = fmt.Errorf("%s env: %w", envTestUserCount, err)
+			_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
-	err = app.SetupJWT(jwtVerificationKeyFile, jwtSignatureKeyFile)
-	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
+	const envTestAuthFile = "APPTEST_AUTH_FILE"
+	testAuthFile := os.Getenv(envTestAuthFile)
+
+	setups := make([]string, 0)
+
+	if *appFlag {
+		setups = append(setups, "app")
+		err := SetupApp(&SetupAppParams{
+			PostgresURL:            postgresURL,
+			JWTVerificationKeyFile: jwtVerificationKeyFile,
+			JWTSignatureKeyFile:    jwtSignatureKeyFile,
+		})
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	if *apptestFlag {
+		setups = append(setups, "apptest")
+		err := SetupApptest(&SetupApptestParams{
+			PostgresURL:         postgresURL,
+			JWTSignatureKeyFile: jwtSignatureKeyFile,
+			UserFile:            testUserFile,
+			UserGenerateCount:   testUserCount,
+			AuthFile:            testAuthFile,
+		})
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	if len(setups) == 0 {
+		_, _ = fmt.Fprint(os.Stderr, "error: didn't have any setups to do\n")
 		os.Exit(1)
 	}
 
