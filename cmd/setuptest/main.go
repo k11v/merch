@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/k11v/merch/internal/app"
@@ -123,6 +124,10 @@ func run(params *runParams) error {
 	}
 
 	if params.UserFile != "" {
+		err = os.MkdirAll(filepath.Dir(params.UserFile), 0o700)
+		if err != nil {
+			return err
+		}
 		err = WriteFileJSON(params.UserFile, users)
 		if err != nil {
 			return err
@@ -140,6 +145,10 @@ func run(params *runParams) error {
 	}
 
 	if params.AuthFile != "" {
+		err = os.MkdirAll(filepath.Dir(params.AuthFile), 0o700)
+		if err != nil {
+			return err
+		}
 		err = WriteFileJSON(params.AuthFile, authTokens)
 		if err != nil {
 			return err
