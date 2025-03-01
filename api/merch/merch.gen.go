@@ -44,6 +44,12 @@ type ErrorResponse struct {
 	Errors *string `json:"errors,omitempty"`
 }
 
+// HealthResponse defines model for HealthResponse.
+type HealthResponse struct {
+	// Status Статус сервиса.
+	Status *string `json:"status,omitempty"`
+}
+
 // InfoResponse defines model for InfoResponse.
 type InfoResponse struct {
 	CoinHistory *struct {
@@ -170,6 +176,9 @@ type ClientInterface interface {
 	// GetAPIBuyItem request
 	GetAPIBuyItem(ctx context.Context, item string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetAPIHealth request
+	GetAPIHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetAPIInfo request
 	GetAPIInfo(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -205,6 +214,18 @@ func (c *Client) PostAPIAuth(ctx context.Context, body PostAPIAuthJSONRequestBod
 
 func (c *Client) GetAPIBuyItem(ctx context.Context, item string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetAPIBuyItemRequest(c.Server, item)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetAPIHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetAPIHealthRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -308,6 +329,33 @@ func NewGetAPIBuyItemRequest(server string, item string) (*http.Request, error) 
 	}
 
 	operationPath := fmt.Sprintf("/api/buy/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetAPIHealthRequest generates requests for GetAPIHealth
+func NewGetAPIHealthRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/health")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -443,6 +491,9 @@ type ClientWithResponsesInterface interface {
 	// GetAPIBuyItemWithResponse request
 	GetAPIBuyItemWithResponse(ctx context.Context, item string, reqEditors ...RequestEditorFn) (*GetAPIBuyItemResponse, error)
 
+	// GetAPIHealthWithResponse request
+	GetAPIHealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetAPIHealthResponse, error)
+
 	// GetAPIInfoWithResponse request
 	GetAPIInfoWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetAPIInfoResponse, error)
 
@@ -495,6 +546,29 @@ func (r GetAPIBuyItemResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetAPIBuyItemResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetAPIHealthResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *HealthResponse
+	JSON500      *ErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetAPIHealthResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetAPIHealthResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -574,6 +648,15 @@ func (c *ClientWithResponses) GetAPIBuyItemWithResponse(ctx context.Context, ite
 		return nil, err
 	}
 	return ParseGetAPIBuyItemResponse(rsp)
+}
+
+// GetAPIHealthWithResponse request returning *GetAPIHealthResponse
+func (c *ClientWithResponses) GetAPIHealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetAPIHealthResponse, error) {
+	rsp, err := c.GetAPIHealth(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetAPIHealthResponse(rsp)
 }
 
 // GetAPIInfoWithResponse request returning *GetAPIInfoResponse
@@ -689,6 +772,39 @@ func ParseGetAPIBuyItemResponse(rsp *http.Response) (*GetAPIBuyItemResponse, err
 	return response, nil
 }
 
+// ParseGetAPIHealthResponse parses an HTTP response from a GetAPIHealthWithResponse call
+func ParseGetAPIHealthResponse(rsp *http.Response) (*GetAPIHealthResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetAPIHealthResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest HealthResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetAPIInfoResponse parses an HTTP response from a GetAPIInfoWithResponse call
 func ParseGetAPIInfoResponse(rsp *http.Response) (*GetAPIInfoResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -784,6 +900,9 @@ type ServerInterface interface {
 	// Купить предмет за монеты.
 	// (GET /api/buy/{item})
 	GetAPIBuyItem(w http.ResponseWriter, r *http.Request, item string)
+	// Получить здоровье сервиса.
+	// (GET /api/health)
+	GetAPIHealth(w http.ResponseWriter, r *http.Request)
 	// Получить информацию о монетах, инвентаре и истории транзакций.
 	// (GET /api/info)
 	GetAPIInfo(w http.ResponseWriter, r *http.Request)
@@ -843,6 +962,26 @@ func (siw *ServerInterfaceWrapper) GetAPIBuyItem(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetAPIBuyItem(w, r, item)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAPIHealth operation middleware
+func (siw *ServerInterfaceWrapper) GetAPIHealth(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAPIHealth(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1014,6 +1153,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 	m.HandleFunc("POST "+options.BaseURL+"/api/auth", wrapper.PostAPIAuth)
 	m.HandleFunc("GET "+options.BaseURL+"/api/buy/{item}", wrapper.GetAPIBuyItem)
+	m.HandleFunc("GET "+options.BaseURL+"/api/health", wrapper.GetAPIHealth)
 	m.HandleFunc("GET "+options.BaseURL+"/api/info", wrapper.GetAPIInfo)
 	m.HandleFunc("POST "+options.BaseURL+"/api/sendCoin", wrapper.PostAPISendCoin)
 
@@ -1101,6 +1241,31 @@ func (response GetAPIBuyItem401JSONResponse) VisitGetAPIBuyItemResponse(w http.R
 type GetAPIBuyItem500JSONResponse ErrorResponse
 
 func (response GetAPIBuyItem500JSONResponse) VisitGetAPIBuyItemResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetAPIHealthRequestObject struct {
+}
+
+type GetAPIHealthResponseObject interface {
+	VisitGetAPIHealthResponse(w http.ResponseWriter) error
+}
+
+type GetAPIHealth200JSONResponse HealthResponse
+
+func (response GetAPIHealth200JSONResponse) VisitGetAPIHealthResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetAPIHealth500JSONResponse ErrorResponse
+
+func (response GetAPIHealth500JSONResponse) VisitGetAPIHealthResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(500)
 
@@ -1201,6 +1366,9 @@ type StrictServerInterface interface {
 	// Купить предмет за монеты.
 	// (GET /api/buy/{item})
 	GetAPIBuyItem(ctx context.Context, request GetAPIBuyItemRequestObject) (GetAPIBuyItemResponseObject, error)
+	// Получить здоровье сервиса.
+	// (GET /api/health)
+	GetAPIHealth(ctx context.Context, request GetAPIHealthRequestObject) (GetAPIHealthResponseObject, error)
 	// Получить информацию о монетах, инвентаре и истории транзакций.
 	// (GET /api/info)
 	GetAPIInfo(ctx context.Context, request GetAPIInfoRequestObject) (GetAPIInfoResponseObject, error)
@@ -1288,6 +1456,30 @@ func (sh *strictHandler) GetAPIBuyItem(w http.ResponseWriter, r *http.Request, i
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetAPIBuyItemResponseObject); ok {
 		if err := validResponse.VisitGetAPIBuyItemResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetAPIHealth operation middleware
+func (sh *strictHandler) GetAPIHealth(w http.ResponseWriter, r *http.Request) {
+	var request GetAPIHealthRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAPIHealth(ctx, request.(GetAPIHealthRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAPIHealth")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetAPIHealthResponseObject); ok {
+		if err := validResponse.VisitGetAPIHealthResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
