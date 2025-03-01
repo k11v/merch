@@ -8,12 +8,12 @@ services:
       - APP_POSTGRES_URL=postgres://postgres:postgres@postgres:5432/postgres
       - APP_HOST=0.0.0.0
       - APP_PORT=8080
-      - APP_JWT_VERIFICATION_KEY_FILE=/user/jwt-data/public.pem
-      - APP_JWT_SIGNATURE_KEY_FILE=/user/jwt-data/private.pem
+      - APP_JWT_VERIFICATION_KEY_FILE=/user/app/jwt.pub.pem
+      - APP_JWT_SIGNATURE_KEY_FILE=/user/app/jwt.pem
     ports:
       - "8080:8080"
     volumes:
-      - jwt-data:/user/jwt-data
+      - app-data:/user/app
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/api/health"]
       interval: 3s
@@ -30,10 +30,10 @@ services:
       - example.env
     environment:
       - APP_POSTGRES_URL=postgres://postgres:postgres@postgres:5432/postgres
-      - APP_JWT_VERIFICATION_KEY_FILE=/user/jwt-data/public.pem
-      - APP_JWT_SIGNATURE_KEY_FILE=/user/jwt-data/private.pem
+      - APP_JWT_VERIFICATION_KEY_FILE=/user/app/jwt.pub.pem
+      - APP_JWT_SIGNATURE_KEY_FILE=/user/app/jwt.pem
     volumes:
-      - jwt-data:/user/jwt-data
+      - app-data:/user/app
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,5 +53,5 @@ services:
       timeout: 30s
       retries: 10
 volumes:
-  jwt-data:
+  app-data:
   postgres-data:
