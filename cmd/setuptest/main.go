@@ -13,7 +13,7 @@ import (
 var (
 	genUsersFlag   = flag.Int("genusers", 0, "number of users to generate")
 	writeUsersFlag = flag.String("writeusers", "", "write users to JSON file")
-	genAuthsFlag   = flag.Int("genauths", 0, "number of users to authenticate")
+	genAuthsFlag   = flag.Bool("genauths", false, "whether to generate auth tokens for users")
 	writeAuthsFlag = flag.String("writeauths", "", "write auth tokens to JSON file")
 )
 
@@ -59,14 +59,14 @@ func run(postgresURL string, jwtSignatureKeyFile string) error {
 		return err
 	}
 
-	var users []*User
+	var users map[string]*User
 	userCount := *genUsersFlag
 	if userCount > 0 {
 		users, err = GenerateUsers(ctx, db, userCount)
 		if err != nil {
 			return err
 		}
-		slog.Info("generated users", "count", userCount)
+		slog.Info("generated users", "count", len(users))
 	}
 
 	userFile := *writeUsersFlag
@@ -78,14 +78,13 @@ func run(postgresURL string, jwtSignatureKeyFile string) error {
 		slog.Info("written user file", "name", userFile)
 	}
 
-	var authTokens []*AuthToken
-	authTokenCount := *genAuthsFlag
-	if authTokenCount > 0 {
-		authTokens, err = GenerateAuthTokens(ctx, db, jwtSignatureKey, users, authTokenCount)
+	var authTokens map[string]string
+	if *genAuthsFlag {
+		authTokens, err = GenerateAuthTokens(ctx, db, jwtSignatureKey, users)
 		if err != nil {
 			return err
 		}
-		slog.Info("generated auth tokens", "count", authTokenCount)
+		slog.Info("generated auth tokens", "count", len(authTokens))
 	}
 
 	authTokenFile := *writeAuthsFlag
