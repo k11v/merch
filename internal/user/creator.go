@@ -129,6 +129,11 @@ func (dc *DataCreator) CreateUsers(ctx context.Context, paramsUsers []*DataCreat
 		return nil, err
 	}
 
+	err = tx.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	return users, nil
 }
 
