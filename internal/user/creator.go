@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
@@ -77,24 +78,58 @@ func (dc *DataCreator) CreateUser(ctx context.Context, params *DataCreatorCreate
 	return u, nil
 }
 
-func (dc *DataCreator) CreateUsers(ctx context.Context, users []*DataCreatorCreateUserParams) error {
-	_, err := dc.db.CopyFrom(
+func (dc *DataCreator) CreateUsers(ctx context.Context, paramsUsers []*DataCreatorCreateUserParams) ([]*User, error) {
+	tx, err := dc.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		rollbackErr := tx.Rollback(ctx)
+		if rollbackErr != nil {
+			slog.Error("didn't rollback transaction", "err", rollbackErr)
+		}
+	}()
+
+	_, err = tx.Exec(ctx, `
+		CREATE TEMPORARY TABLE temp_users (
+			username text,
+			password_hash text,
+			balance int
+		)
+		ON COMMIT DROP
+	`)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = tx.CopyFrom(
 		ctx,
-		pgx.Identifier{"users"},
+		pgx.Identifier{"temp_users"},
 		[]string{"username", "password_hash", "balance"},
-		pgx.CopyFromSlice(len(users), func(i int) ([]any, error) {
-			u := users[i]
+		pgx.CopyFromSlice(len(paramsUsers), func(i int) ([]any, error) {
+			u := paramsUsers[i]
 			return []any{u.Username, u.PasswordHash, u.Balance}, nil
 		}),
 	)
 	if err != nil {
+		return nil, err
+	}
+
+	rows, _ := tx.Query(ctx, `
+		INSERT INTO users (username, password_hash, balance)
+		SELECT username, password_hash, balance FROM temp_users
+		RETURNING id, username, password_hash, balance
+	`)
+	users, err := pgx.CollectRows(rows, RowToUser)
+	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && isConstraintPgError(pgErr, "users_username_idx") {
-			return ErrExist
+			return nil, ErrExist
 		}
-		return err
+		return nil, err
 	}
-	return nil
+
+	return users, nil
 }
 
 func isConstraintPgError(e *pgconn.PgError, constraint string) bool {
