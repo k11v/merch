@@ -10,6 +10,23 @@ security:
   - BearerAuth: []
 
 paths:
+  /api/health:
+    get:
+      summary: Получить здоровье сервиса.
+      responses:
+        '200':
+          description: Успешный ответ.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '500':
+          description: Внутренняя ошибка сервера.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/info:
     get:
       summary: Получить информацию о монетах, инвентаре и истории транзакций.
@@ -150,6 +167,13 @@ components:
       bearerFormat: JWT
 
   schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Статус сервиса.
+
     InfoResponse:
       type: object
       properties:
