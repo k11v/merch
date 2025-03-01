@@ -85,7 +85,7 @@ func (dc *DataCreator) CreateUsers(ctx context.Context, paramsUsers []*DataCreat
 	}
 	defer func() {
 		rollbackErr := tx.Rollback(ctx)
-		if rollbackErr != nil {
+		if rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
 			slog.Error("didn't rollback transaction", "err", rollbackErr)
 		}
 	}()
