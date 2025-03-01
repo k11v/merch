@@ -27,7 +27,7 @@ func ReadFileED25519PublicKey(name string) (ed25519.PublicKey, error) {
 	if !ok {
 		return nil, errors.New("app.ReadFileED25519PublicKey: not an ed25519 public key file")
 	}
-	return publicKey, fmt.Errorf("app.ReadFileED25519PublicKey: %w", err)
+	return publicKey, nil
 }
 
 func ReadFileED25519PrivateKey(name string) (ed25519.PrivateKey, error) {
@@ -48,5 +48,5 @@ func ReadFileED25519PrivateKey(name string) (ed25519.PrivateKey, error) {
 	if !ok {
 		return nil, errors.New("app.ReadFileED25519PublicKey: not an ed25519 private key file")
 	}
-	return privateKey, fmt.Errorf("app.ReadFileED25519PublicKey: %w", err)
+	return privateKey, nil
 }
