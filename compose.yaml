@@ -14,6 +14,11 @@ services:
       - "8080:8080"
     volumes:
       - jwt-data:/user/jwt-data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/api/health"]
+      interval: 3s
+      timeout: 30s
+      retries: 10
     depends_on:
       setup:
         condition: service_completed_successfully
