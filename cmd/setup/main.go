@@ -41,28 +41,38 @@ func main() {
 
 	const envTestUserFile = "APPTEST_USER_FILE"
 	testUserFile := os.Getenv(envTestUserFile)
+	if testUserFile == "" {
+		err := fmt.Errorf("%s env is empty", envTestUserFile)
+		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 
-	const envTestUserCount = "APPTEST_USER_GENERATE_COUNT"
+	const envTestUserCount = "APPTEST_USER_COUNT"
 	testUserCountEnv := os.Getenv(envTestUserCount)
-	testUserCount := 0
-	if testUserCountEnv != "" {
-		var err error
-		testUserCount, err = strconv.Atoi(testUserCountEnv)
-		if err != nil {
-			err = fmt.Errorf("%s env: %w", envTestUserCount, err)
-			_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
+	if testUserCountEnv == "" {
+		err := fmt.Errorf("%s env is empty", envTestUserCount)
+		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	testUserCount, err := strconv.Atoi(testUserCountEnv)
+	if err != nil {
+		err = fmt.Errorf("%s env: %w", envTestUserCount, err)
+		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
 	}
 
 	const envTestAuthFile = "APPTEST_AUTH_FILE"
 	testAuthFile := os.Getenv(envTestAuthFile)
+	if testAuthFile == "" {
+		err = fmt.Errorf("%s env is empty", envTestAuthFile)
+		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 
 	setups := make([]string, 0)
-
 	if *appFlag {
 		setups = append(setups, "app")
-		err := SetupApp(&SetupAppParams{
+		err = SetupApp(&SetupAppParams{
 			PostgresURL:            postgresURL,
 			JWTVerificationKeyFile: jwtVerificationKeyFile,
 			JWTSignatureKeyFile:    jwtSignatureKeyFile,
@@ -72,10 +82,9 @@ func main() {
 			os.Exit(1)
 		}
 	}
-
 	if *apptestFlag {
 		setups = append(setups, "apptest")
-		err := SetupApptest(&SetupApptestParams{
+		err = SetupApptest(&SetupApptestParams{
 			PostgresURL:         postgresURL,
 			JWTSignatureKeyFile: jwtSignatureKeyFile,
 			UserFile:            testUserFile,
@@ -87,7 +96,6 @@ func main() {
 			os.Exit(1)
 		}
 	}
-
 	if len(setups) == 0 {
 		_, _ = fmt.Fprint(os.Stderr, "error: didn't have any setups to do\n")
 		os.Exit(1)
