@@ -57,6 +57,7 @@ func Authentication(jwtVerificationKey ed25519.PublicKey) func(next http.Handler
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch {
 			case r.Method == "POST" && r.URL.Path == "/api/auth":
+			case r.Method == "GET" && r.URL.Path == "/api/health":
 			default:
 				const headerAuthorization = "Authorization"
 				authorizationHeader := r.Header.Get(headerAuthorization)
