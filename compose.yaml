@@ -32,6 +32,8 @@ services:
       - APP_POSTGRES_URL=postgres://postgres:postgres@postgres:5432/postgres
       - APP_JWT_VERIFICATION_KEY_FILE=/user/app/jwt.pub.pem
       - APP_JWT_SIGNATURE_KEY_FILE=/user/app/jwt.pem
+      - APPTEST_USER_FILE=/user/app/apptest/user.json
+      - APPTEST_AUTH_TOKEN_FILE=/user/app/apptest/auth_token.json
     volumes:
       - app-data:/user/app
     depends_on:
@@ -52,6 +54,27 @@ services:
       interval: 3s
       timeout: 30s
       retries: 10
+
+  # Profile test.
+  test_setup:
+    build: .
+    entrypoint: ["setup"]
+    command: ["-apptest"]
+    env_file:
+      - example.env
+    environment:
+      - APP_POSTGRES_URL=postgres://postgres:postgres@postgres:5432/postgres
+      - APP_JWT_VERIFICATION_KEY_FILE=/user/app/jwt.pub.pem
+      - APP_JWT_SIGNATURE_KEY_FILE=/user/app/jwt.pem
+      - APPTEST_USER_FILE=/user/app/apptest/user.json
+      - APPTEST_AUTH_TOKEN_FILE=/user/app/apptest/auth_token.json
+    volumes:
+      - app-data:/user/app
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    profiles:
+      - test
 volumes:
   app-data:
   postgres-data:
