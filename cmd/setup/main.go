@@ -61,17 +61,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	const envTestAuthFile = "APPTEST_AUTH_FILE"
-	testAuthFile := os.Getenv(envTestAuthFile)
-	if testAuthFile == "" {
-		err = fmt.Errorf("%s env is empty", envTestAuthFile)
+	const envTestAuthTokenFile = "APPTEST_AUTH_TOKEN_FILE" // #nosec G101
+	testAuthTokenFile := os.Getenv(envTestAuthTokenFile)
+	if testAuthTokenFile == "" {
+		err = fmt.Errorf("%s env is empty", envTestAuthTokenFile)
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 
-	setups := make([]string, 0)
+	doneSetups := make([]string, 0)
 	if *appFlag {
-		setups = append(setups, "app")
 		err = SetupApp(&SetupAppParams{
 			PostgresURL:            postgresURL,
 			JWTVerificationKeyFile: jwtVerificationKeyFile,
@@ -81,23 +80,24 @@ func main() {
 			_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
+		doneSetups = append(doneSetups, "app")
 	}
 	if *apptestFlag {
-		setups = append(setups, "apptest")
 		err = SetupApptest(&SetupApptestParams{
 			PostgresURL:         postgresURL,
 			JWTSignatureKeyFile: jwtSignatureKeyFile,
 			UserFile:            testUserFile,
-			UserGenerateCount:   testUserCount,
-			AuthFile:            testAuthFile,
+			UserCount:           testUserCount,
+			AuthTokenFile:       testAuthTokenFile,
 		})
 		if err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
+		doneSetups = append(doneSetups, "apptest")
 	}
-	if len(setups) == 0 {
-		_, _ = fmt.Fprint(os.Stderr, "error: didn't have any setups to do\n")
+	if len(doneSetups) == 0 {
+		_, _ = fmt.Fprint(os.Stderr, "error: no setups were specified\n")
 		os.Exit(1)
 	}
 

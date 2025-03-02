@@ -12,8 +12,8 @@ type SetupApptestParams struct {
 	PostgresURL         string
 	JWTSignatureKeyFile string
 	UserFile            string
-	UserGenerateCount   int
-	AuthFile            string
+	UserCount           int
+	AuthTokenFile       string
 }
 
 func SetupApptest(params *SetupApptestParams) error {
@@ -30,11 +30,10 @@ func SetupApptest(params *SetupApptestParams) error {
 		return err
 	}
 
-	users, err := GenerateUsers(ctx, db, params.UserGenerateCount)
+	users, err := GenerateUsers(ctx, db, params.UserCount)
 	if err != nil {
 		return err
 	}
-
 	err = os.MkdirAll(filepath.Dir(params.UserFile), 0o700)
 	if err != nil {
 		return err
@@ -48,12 +47,11 @@ func SetupApptest(params *SetupApptestParams) error {
 	if err != nil {
 		return err
 	}
-
-	err = os.MkdirAll(filepath.Dir(params.AuthFile), 0o700)
+	err = os.MkdirAll(filepath.Dir(params.AuthTokenFile), 0o700)
 	if err != nil {
 		return err
 	}
-	err = WriteFileJSON(params.AuthFile, authTokens)
+	err = WriteFileJSON(params.AuthTokenFile, authTokens)
 	if err != nil {
 		return err
 	}
