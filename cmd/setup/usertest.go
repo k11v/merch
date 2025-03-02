@@ -21,7 +21,7 @@ type User struct {
 	Balance  int       `json:"balance"`
 }
 
-func GenerateUsers(ctx context.Context, db app.PgxExecutor, count int) (map[string]*User, error) {
+func GenerateUsers(ctx context.Context, db app.PgxExecutor, count int) ([]*User, error) {
 	password := usertest.DefaultPassword
 	passwordHasher := user.NewPasswordHasher(user.DefaultArgon2IDParams())
 	passwordHash, err := passwordHasher.Hash(password)
@@ -44,9 +44,9 @@ func GenerateUsers(ctx context.Context, db app.PgxExecutor, count int) (map[stri
 		return nil, fmt.Errorf("GenerateUsers: %w", err)
 	}
 
-	users := make(map[string]*User, len(userUsers))
-	for _, u := range userUsers {
-		users[u.Username] = &User{
+	users := make([]*User, len(userUsers))
+	for i, u := range userUsers {
+		users[i] = &User{
 			ID:       u.ID,
 			Username: u.Username,
 			Password: password,
