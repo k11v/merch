@@ -28,8 +28,11 @@ Merch это сервис внутреннего магазина мерча к�
    export APP_HOST="127.0.0.1"
    export APP_PORT="8080"
    export APP_POSTGRES_URL="postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
-   export APP_JWT_VERIFICATION_KEY_FILE=".app/jwt-data/public.pem"
-   export APP_JWT_SIGNATURE_KEY_FILE=".app/jwt-data/private.pem"
+   export APP_JWT_VERIFICATION_KEY_FILE=".app/jwt.pub.pem"
+   export APP_JWT_SIGNATURE_KEY_FILE=".app/jwt.pem"
+   export APPTEST_USER_FILE=".app/apptest/user.json"
+   export APPTEST_USER_COUNT="10000"
+   export APPTEST_AUTH_TOKEN_FILE=".app/apptest/auth_token.json"
    ```
 
 2. Настройте окружение сервера.
