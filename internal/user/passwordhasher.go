@@ -167,5 +167,5 @@ func intToUint32(i int) (uint32, error) {
 	if i < 0 || i > math.MaxUint32 {
 		return 0, errors.New("int out of uint32 bounds")
 	}
-	return uint32(i), nil
+	return uint32(i), nil //#nosec G115
 }
