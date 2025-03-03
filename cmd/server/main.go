@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -129,9 +130,11 @@ func newHTTPServer(db *pgxpool.Pool, host string, port int, jwtVerificationKey e
 	logLogger := slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)
 
 	return &http.Server{
-		Addr:     addr,
-		Handler:  h,
-		ErrorLog: logLogger,
+		Addr:              addr,
+		Handler:           h,
+		ErrorLog:          logLogger,
+		ReadTimeout:       30 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 }
 
