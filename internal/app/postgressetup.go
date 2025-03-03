@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"embed"
 	"errors"
+	"fmt"
 	"io/fs"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -16,11 +17,16 @@ import (
 func SetupPostgres(url string) error {
 	db, err := sql.Open("pgx", url)
 	if err != nil {
-		return err
+		return fmt.Errorf("app.SetupPostgres: %w", err)
 	}
 	defer db.Close()
 
-	return migratePostgresDB(db)
+	err = migratePostgresDB(db)
+	if err != nil {
+		return fmt.Errorf("app.SetupPostgres: %w", err)
+	}
+
+	return nil
 }
 
 func migratePostgresDB(db *sql.DB) error {

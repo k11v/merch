@@ -3,9 +3,7 @@ package main
 import (
 	"context"
 	"crypto/ed25519"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -13,22 +11,13 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/k11v/merch/api/merch"
 	"github.com/k11v/merch/internal/app"
 )
-
-type pgxExecutor interface {
-	Begin(ctx context.Context) (pgx.Tx, error)
-	Exec(ctx context.Context, sql string, arguments ...any) (commandTag pgconn.CommandTag, err error)
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
-}
 
 func main() {
 	const envHost = "APP_HOST"
@@ -95,12 +84,12 @@ func run(host string, port int, postgresURL, jwtVerificationKeyFile, jwtSignatur
 	}
 	defer postgresPool.Close()
 
-	jwtVerificationKey, err := readFileWithED25519PublicKey(jwtVerificationKeyFile)
+	jwtVerificationKey, err := app.ReadFileED25519PublicKey(jwtVerificationKeyFile)
 	if err != nil {
 		return err
 	}
 
-	jwtSignatureKey, err := readFileWithED25519PrivateKey(jwtSignatureKeyFile)
+	jwtSignatureKey, err := app.ReadFileED25519PrivateKey(jwtSignatureKeyFile)
 	if err != nil {
 		return err
 	}
@@ -114,48 +103,6 @@ func run(host string, port int, postgresURL, jwtVerificationKeyFile, jwtSignatur
 	}
 
 	return nil
-}
-
-func readFileWithED25519PublicKey(name string) (ed25519.PublicKey, error) {
-	publicKeyPemBytes, err := os.ReadFile(name)
-	if err != nil {
-		return nil, err
-	}
-	publicKeyPemBlock, _ := pem.Decode(publicKeyPemBytes)
-	if publicKeyPemBlock == nil {
-		return nil, err
-	}
-	publicKeyX509Bytes := publicKeyPemBlock.Bytes
-	publicKeyAny, err := x509.ParsePKIXPublicKey(publicKeyX509Bytes)
-	if err != nil {
-		return nil, err
-	}
-	publicKey, ok := publicKeyAny.(ed25519.PublicKey)
-	if !ok {
-		return nil, errors.New("not an ed25519 public key file")
-	}
-	return publicKey, nil
-}
-
-func readFileWithED25519PrivateKey(name string) (ed25519.PrivateKey, error) {
-	privateKeyPemBytes, err := os.ReadFile(name)
-	if err != nil {
-		return nil, err
-	}
-	privateKeyPemBlock, _ := pem.Decode(privateKeyPemBytes)
-	if privateKeyPemBlock == nil {
-		return nil, err
-	}
-	privateKeyX509Bytes := privateKeyPemBlock.Bytes
-	privateKeyAny, err := x509.ParsePKCS8PrivateKey(privateKeyX509Bytes)
-	if err != nil {
-		return nil, err
-	}
-	privateKey, ok := privateKeyAny.(ed25519.PrivateKey)
-	if !ok {
-		return nil, errors.New("not an ed25519 private key file")
-	}
-	return privateKey, nil
 }
 
 func newHTTPServer(db *pgxpool.Pool, host string, port int, jwtVerificationKey ed25519.PublicKey, jwtSignatureKey ed25519.PrivateKey) *http.Server {
@@ -183,9 +130,10 @@ func newHTTPServer(db *pgxpool.Pool, host string, port int, jwtVerificationKey e
 	logLogger := slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)
 
 	return &http.Server{
-		Addr:     addr,
-		Handler:  h,
-		ErrorLog: logLogger,
+		Addr:              addr,
+		Handler:           h,
+		ErrorLog:          logLogger,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 }
 

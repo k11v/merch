@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"net/http"
+	"os"
 	"reflect"
 	"testing"
 
@@ -10,6 +11,10 @@ import (
 )
 
 func TestServer(t *testing.T) {
+	if os.Getenv("APPTEST_E2E") != "1" {
+		t.Skip("skipping test; use APPTEST_E2E=1 to unskip")
+	}
+
 	t.Run("allows to buy an item", func(t *testing.T) {
 		var (
 			ctx    = context.TODO()
@@ -143,28 +148,34 @@ func TestServer(t *testing.T) {
 			Amount   *int    `json:"amount,omitempty"`
 			FromUser *string `json:"fromUser,omitempty"`
 		}
-		var sentCoinHistory1 []sentCoinHistoryItem = *coinHistory1.Sent
-		var receivedCoinHistory2 []receivedCoinHistoryItem = *coinHistory2.Received
+		var gotSentCoinHistory1 []sentCoinHistoryItem = *coinHistory1.Sent
+		var gotReceivedCoinHistory2 []receivedCoinHistoryItem = *coinHistory2.Received
+
+		wantSentCoinHistory1 := []sentCoinHistoryItem{{Amount: newInt(15), ToUser: newString("testuser2")}}
+		wantReceivedCoinHistory2 := []receivedCoinHistoryItem{{Amount: newInt(15), FromUser: newString("testuser1")}}
 
 		if got, want := coins1, 985; got != want {
 			t.Fatalf("got %+v coins, want %+v", got, want)
 		}
-		if got, want := sentCoinHistory1, []sentCoinHistoryItem{{Amount: newInt(15), ToUser: newString("testuser2")}}; !reflect.DeepEqual(got, want) {
+		if got, want := gotSentCoinHistory1, wantSentCoinHistory1; !reflect.DeepEqual(got, want) {
 			t.Fatalf("got %+v sent coin history, want %+v", got, want)
 		}
 		if got, want := coins2, 1015; got != want {
 			t.Fatalf("got %+v coins, want %+v", got, want)
 		}
-		if got, want := receivedCoinHistory2, []receivedCoinHistoryItem{{Amount: newInt(15), FromUser: newString("testuser1")}}; !reflect.DeepEqual(got, want) {
+		if got, want := gotReceivedCoinHistory2, wantReceivedCoinHistory2; !reflect.DeepEqual(got, want) {
 			t.Fatalf("got %+v received coin history, want %+v", got, want)
 		}
 	})
 }
 
 func newTestClient(tb testing.TB) *merch.ClientWithResponses {
+	url := os.Getenv("APPTEST_URL")
+	if url == "" {
+		url = "http://127.0.0.1:8080"
+	}
 	httpClient := new(http.Client)
-	baseURL := "http://127.0.0.1:8080"
-	client, err := merch.NewClientWithResponses(baseURL, merch.WithHTTPClient(httpClient))
+	client, err := merch.NewClientWithResponses(url, merch.WithHTTPClient(httpClient))
 	if err != nil {
 		tb.Fatalf("got %v", err)
 	}
