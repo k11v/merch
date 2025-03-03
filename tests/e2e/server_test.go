@@ -11,8 +11,8 @@ import (
 )
 
 func TestServer(t *testing.T) {
-	if os.Getenv("XGOTESTE2E") != "1" {
-		t.Skip("skipping test; use XGOTESTE2E=1 to unskip")
+	if os.Getenv("APPTEST_E2E") != "1" {
+		t.Skip("skipping test; use APPTEST_E2E=1 to unskip")
 	}
 
 	t.Run("allows to buy an item", func(t *testing.T) {
