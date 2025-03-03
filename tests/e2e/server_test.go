@@ -167,9 +167,12 @@ func TestServer(t *testing.T) {
 }
 
 func newTestClient(tb testing.TB) *merch.ClientWithResponses {
+	url := os.Getenv("APPTEST_URL")
+	if url == "" {
+		url = "http://127.0.0.1:8080"
+	}
 	httpClient := new(http.Client)
-	baseURL := "http://127.0.0.1:8080"
-	client, err := merch.NewClientWithResponses(baseURL, merch.WithHTTPClient(httpClient))
+	client, err := merch.NewClientWithResponses(url, merch.WithHTTPClient(httpClient))
 	if err != nil {
 		tb.Fatalf("got %v", err)
 	}
