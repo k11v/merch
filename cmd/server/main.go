@@ -133,7 +133,6 @@ func newHTTPServer(db *pgxpool.Pool, host string, port int, jwtVerificationKey e
 		Addr:              addr,
 		Handler:           h,
 		ErrorLog:          logLogger,
-		ReadTimeout:       30 * time.Second,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 }
